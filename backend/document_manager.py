@@ -1,0 +1,265 @@
+"""
+backend/document_manager.py
+-----------------------------
+Admin Document Management: upload → ingest → embed → index.
+
+Handles:
+  - SHA-256 deduplication (reject exact duplicate content)
+  - Version supersession detection (same department, new version)
+  - Auto-trigger ingestion → chunking → embedding → ChromaDB indexing
+  - Support for .docx files (the VIT SOP corpus format)
+  - File staging to data/staging/ before ingestion
+
+Public API:
+  ingest_uploaded_file(filename, content_bytes)  → IngestionResult
+  get_document_stats()                           → dict
+  get_ingestion_logs(limit)                      → list[dict]
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import os
+import sys
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+# Ensure project root on path
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+STAGING_DIR = Path(_PROJECT_ROOT) / "data" / "staging"
+# Admin-uploadable formats. Text extraction for each is handled by the shared
+# ingestion pipeline (ingestion_pipeline.ingest_document); chunking, embedding,
+# ChromaDB indexing and BM25 indexing are identical regardless of format.
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc"}
+
+
+# ---------------------------------------------------------------------------
+# Result dataclass
+# ---------------------------------------------------------------------------
+
+@dataclass
+class IngestionResult:
+    filename:       str
+    status:         str            # "ingested" | "duplicate" | "superseded" | "failed"
+    doc_id:         Optional[str]  = None
+    department:     Optional[str]  = None
+    version:        Optional[str]  = None
+    chunks_created: int            = 0
+    vectors_added:  int            = 0
+    superseded_doc: Optional[str]  = None
+    error:          Optional[str]  = None
+    processing_ms:  float          = 0.0
+
+    @property
+    def success(self) -> bool:
+        return self.status in ("ingested", "superseded")
+
+
+# ---------------------------------------------------------------------------
+# Main ingestion entry point
+# ---------------------------------------------------------------------------
+
+def ingest_uploaded_file(filename: str, content_bytes: bytes) -> IngestionResult:
+    """
+    Full pipeline for an admin-uploaded document:
+      1. Validate file type
+      2. SHA-256 dedup check
+      3. Save to staging directory
+      4. Phase 2: ingest (text extraction + metadata + ledger)
+      5. Phase 3: chunk (already called by ingestion_pipeline.ingest_document)
+      6. Phase 4+5: embed + index to ChromaDB
+
+    Returns IngestionResult with full status.
+    """
+    import time
+    t_start = time.perf_counter()
+
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return IngestionResult(
+            filename=filename,
+            status="failed",
+            error=f"Unsupported file type '{ext}'. Accepted: {', '.join(ALLOWED_EXTENSIONS)}",
+        )
+
+    if not content_bytes:
+        return IngestionResult(filename=filename, status="failed", error="File is empty.")
+
+    # --- SHA-256 dedup: check if identical content already indexed ---
+    file_hash = hashlib.sha256(content_bytes).hexdigest()
+
+    try:
+        import ledger
+        ledger.initialize_db()
+        existing = ledger.get_document_by_doc_id(file_hash)
+        if existing and existing.get("status") not in ("superseded",):
+            return IngestionResult(
+                filename=filename,
+                status="duplicate",
+                doc_id=file_hash,
+                department=existing.get("department"),
+                version=existing.get("version"),
+                error="Identical document already indexed (SHA-256 match).",
+            )
+    except Exception as exc:
+        logger.warning("[DOC_MANAGER] Ledger dedup check failed: %s", exc)
+
+    # --- Save to staging directory ---
+    STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    dest_path = STAGING_DIR / filename
+
+    try:
+        with open(dest_path, "wb") as f:
+            f.write(content_bytes)
+        logger.info("[DOC_MANAGER] Saved '%s' to staging (%d bytes)", filename, len(content_bytes))
+    except Exception as exc:
+        return IngestionResult(
+            filename=filename, status="failed",
+            error=f"Could not save file: {exc}",
+        )
+
+    # --- Phase 2+3: ingest_document (text extraction + chunking + ledger) ---
+    try:
+        from ingestion_pipeline import ingest_document
+        from chunk_schema import IngestionSummary
+        from chunker import run_chunking
+
+        summary = IngestionSummary(
+            run_id=datetime.utcnow().strftime("%Y%m%d_%H%M%S"),
+            started_at=datetime.utcnow().isoformat(),
+        )
+        result = ingest_document(str(dest_path), summary)
+
+        if result is None:
+            # Skipped (unchanged hash) or failed
+            if summary.total_docs_skipped > 0:
+                return IngestionResult(
+                    filename=filename,
+                    status="duplicate",
+                    doc_id=file_hash,
+                    error="Document content unchanged — already indexed.",
+                )
+            error_msg = "; ".join(summary.errors) if summary.errors else "Ingestion returned no output."
+            return IngestionResult(filename=filename, status="failed", error=error_msg)
+
+        doc_record, cleaned_text = result
+        # Run chunking
+        all_chunks = run_chunking([doc_record], {doc_record.doc_id: cleaned_text})
+        chunks_for_doc = all_chunks.get(doc_record.doc_id, [])
+        n_chunks = len(chunks_for_doc)
+
+    except Exception as exc:
+        logger.error("[DOC_MANAGER] Phase 2/3 failed for '%s': %s", filename, exc, exc_info=True)
+        return IngestionResult(filename=filename, status="failed", error=f"Ingestion failed: {exc}")
+
+    # --- Phase 4+5: embed + index ---
+    n_vectors = 0
+    try:
+        from vector_store.index_pipeline import run_indexing
+        index_summary = run_indexing(doc_id=doc_record.doc_id)
+        n_vectors = index_summary.chunks_upserted
+        if index_summary.errors:
+            logger.warning("[DOC_MANAGER] Indexing errors for '%s': %s", filename, index_summary.errors)
+    except Exception as exc:
+        logger.error("[DOC_MANAGER] Phase 4/5 failed for '%s': %s", filename, exc, exc_info=True)
+        # Non-fatal — doc is ingested and chunked, just not yet vectorized
+
+    elapsed_ms = (time.perf_counter() - t_start) * 1000
+    superseded = summary.total_docs_superseded > 0
+
+    logger.info(
+        "[DOC_MANAGER] '%s' ingested: chunks=%d vectors=%d superseded=%s elapsed=%.0fms",
+        filename, n_chunks, n_vectors, superseded, elapsed_ms,
+    )
+
+    return IngestionResult(
+        filename=filename,
+        status="superseded" if superseded else "ingested",
+        doc_id=doc_record.doc_id,
+        department=doc_record.department,
+        version=doc_record.version,
+        chunks_created=n_chunks,
+        vectors_added=n_vectors,
+        processing_ms=round(elapsed_ms, 1),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dashboard helpers
+# ---------------------------------------------------------------------------
+
+def get_document_stats() -> dict:
+    """Returns counts from the SQLite ledger for the admin dashboard."""
+    try:
+        import ledger
+        ledger.initialize_db()
+        docs = ledger.get_all_documents()
+        total      = len(docs)
+        embedded   = sum(1 for d in docs if d.get("status") == "embedded")
+        superseded = sum(1 for d in docs if d.get("status") == "superseded")
+        chunked    = sum(1 for d in docs if d.get("status") in ("chunked", "embedded"))
+        chunk_count = ledger.get_chunk_count()
+        vector_count = ledger.get_embedded_chunk_count()
+
+        return {
+            "total_documents":    total,
+            "embedded_documents": embedded,
+            "superseded_documents": superseded,
+            "chunked_documents":  chunked,
+            "total_chunks":       chunk_count,
+            "embedded_vectors":   vector_count,
+        }
+    except Exception as exc:
+        logger.error("[DOC_MANAGER] get_document_stats failed: %s", exc)
+        return {
+            "total_documents": 0, "embedded_documents": 0,
+            "superseded_documents": 0, "chunked_documents": 0,
+            "total_chunks": 0, "embedded_vectors": 0,
+        }
+
+
+def get_document_list() -> list[dict]:
+    """Returns the full document list from the ledger."""
+    try:
+        import ledger
+        return ledger.get_all_documents()
+    except Exception as exc:
+        logger.error("[DOC_MANAGER] get_document_list failed: %s", exc)
+        return []
+
+
+def get_ingestion_logs(limit: int = 50) -> list[dict]:
+    """Returns recent audit log events."""
+    try:
+        import sqlite3
+        import ledger
+        conn = ledger.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM process_logs ORDER BY timestamp DESC LIMIT ?", (limit,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as exc:
+        logger.error("[DOC_MANAGER] get_ingestion_logs failed: %s", exc)
+        return []
+
+
+def get_chroma_vector_count() -> int:
+    """Returns the current vector count in ChromaDB."""
+    try:
+        from vector_store.chroma_store import get_chroma_store
+        store = get_chroma_store()
+        stats = store.get_collection_stats()
+        return stats.get("vector_count", stats.get("total_vectors", 0))
+    except Exception:
+        return 0

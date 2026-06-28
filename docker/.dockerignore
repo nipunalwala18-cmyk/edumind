@@ -1,0 +1,30 @@
+# Build artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Virtual environment (built inside container from requirements.txt)
+.venv/
+venv/
+env/
+
+# Large model caches (mounted as Docker volumes)
+.cache/
+vector_store/chroma_db/
+*.db
+
+# Test and dev files
+tests/
+*.md
+*.jsonl
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore

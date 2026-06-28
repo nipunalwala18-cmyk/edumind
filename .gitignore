@@ -1,0 +1,40 @@
+# Virtual Environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*
+
+# Logs
+*.log
+
+# Pytest
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# HuggingFace cache
+.cache/
+
+# Ollama
+.ollama/
+
+#Institutional Data
+data/
+
+# Databases
+*.db

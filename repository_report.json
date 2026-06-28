@@ -1,0 +1,394 @@
+{
+  "generated_at": "2026-06-25T13:29:40.735194",
+  "statistics": {
+    "total_files_discovered": 20,
+    "total_files_assessed": 20,
+    "by_extension": {
+      "doc": 14,
+      "docx": 6
+    },
+    "by_suggested_category": {
+      "SOP": 20
+    },
+    "by_suggested_department": {
+      "Admissions": 1,
+      "Research & Development": 1,
+      "Alumni": 1,
+      "Budgeting": 1,
+      "Finance & Accounts": 1,
+      "Stores & Purchase": 1,
+      "Repair & Maintenance": 1,
+      "Security Management": 1,
+      "Library Management": 1,
+      "Mms": 1,
+      "Training & Development": 1,
+      "Affiliation Management": 1,
+      "Enquiry Handling And Front Office": 1,
+      "Fees And Billing": 1,
+      "Faculty Recruitment & Evaluation": 1,
+      "Academics": 1,
+      "Student Activities": 1,
+      "Committee": 1,
+      "Examination": 1,
+      "Training & Placement": 1
+    }
+  },
+  "duplicate_groups": [],
+  "version_groups": {
+    "finance & accounts": [
+      {
+        "filename": "13. VIT Finance & Accounts Final.docx",
+        "version": "Final",
+        "date": "2026-06-25"
+      }
+    ],
+    "fees and billing": [
+      {
+        "filename": "3.VIT  Fees and Billing(3).docx",
+        "version": "3.0",
+        "date": "2026-06-25"
+      }
+    ]
+  },
+  "large_documents": [
+    {
+      "filename": "10.VIT Research & Development 1.0.doc",
+      "size_bytes": 363520,
+      "path": "data\\10.VIT Research & Development 1.0.doc"
+    },
+    {
+      "filename": "4.VIT Faculty Recruitment & Evaluation.doc",
+      "size_bytes": 412672,
+      "path": "data\\4.VIT Faculty Recruitment & Evaluation.doc"
+    },
+    {
+      "filename": "9. VIT Training & Placement 1.0.doc",
+      "size_bytes": 448000,
+      "path": "data\\9. VIT Training & Placement 1.0.doc"
+    }
+  ],
+  "corrupted_documents": [],
+  "empty_documents": [],
+  "document_inventory": [
+    {
+      "filename": "1. VIT Admissions.docx",
+      "original_path": "1. VIT Admissions.doc",
+      "hash": "114678190ec2bcb58e174611c060930f096cf91c02a77e7a0637b09cadca3047",
+      "character_count": 28482,
+      "paragraphs": 92,
+      "tables": 28,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Admissions",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "10.VIT Research & Development 1.0.docx",
+      "original_path": "10.VIT Research & Development 1.0.doc",
+      "hash": "b1b387bb55405edf1d0f8109ffb8fa9a45e3e16796bdd3518b22cb075541fe27",
+      "character_count": 32851,
+      "paragraphs": 111,
+      "tables": 49,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology Standard Operating Procedure Development",
+        "category": "SOP",
+        "department": "Research & Development",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "11. VIT Alumni 1.0.docx",
+      "original_path": "11. VIT Alumni 1.0.doc",
+      "hash": "ed296551cd3f8ec5e64d2871ba82423939c0ec99f884732ad414b7d61409a718",
+      "character_count": 13350,
+      "paragraphs": 57,
+      "tables": 7,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Alumni",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "12. VIT Budgeting.docx",
+      "original_path": "12. VIT Budgeting.docx",
+      "hash": "9a9426c8bcb31c3d28929baf61273e4e1c0cf16e909086e8fd8d091423357451",
+      "character_count": 7944,
+      "paragraphs": 52,
+      "tables": 7,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Budgeting",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "13. VIT Finance & Accounts Final.docx",
+      "original_path": "13. VIT Finance & Accounts Final.docx",
+      "hash": "99fdb922d1918443ba441616f7672081fc5720eafabce39a38e71ce6c13fe525",
+      "character_count": 30832,
+      "paragraphs": 76,
+      "tables": 24,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Finance & Accounts",
+        "version": "Final",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "14. Stores & Purchase.docx",
+      "original_path": "14. Stores & Purchase.doc",
+      "hash": "ff788e6346420e1bf89def742b4eabad0e7502be4ad46088720ea32237904b8e",
+      "character_count": 16085,
+      "paragraphs": 57,
+      "tables": 7,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Stores & Purchase",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "15. VIT Repair & Maintenance.docx",
+      "original_path": "15. VIT Repair & Maintenance.doc",
+      "hash": "f2e0e9a240123b216c6a3f36fac64ee3eb34a70091791b7a7990c1a2c0d55e8a",
+      "character_count": 11297,
+      "paragraphs": 49,
+      "tables": 6,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Repair & Maintenance",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "16.VIT Security Management.docx",
+      "original_path": "16.VIT Security Management.doc",
+      "hash": "222645286e7f5d2053872a9da3647b65c218b17f9defe13b3d48438e0a72accd",
+      "character_count": 22356,
+      "paragraphs": 222,
+      "tables": 4,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Security Management",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "17.VIT  Library Management 1.0.docx",
+      "original_path": "17.VIT  Library Management 1.0.doc",
+      "hash": "59a1bb29528d40fa797c215ba96d193375c829980d5fe0ffd993f60701ec98ac",
+      "character_count": 14968,
+      "paragraphs": 49,
+      "tables": 4,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Library Management",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "18. VIT MMS.docx",
+      "original_path": "18. VIT MMS.doc",
+      "hash": "e8b5300152a4f0a383a1b400ad5f1a529da946ecd35b51276aea2875b273e4a9",
+      "character_count": 17638,
+      "paragraphs": 99,
+      "tables": 25,
+      "metadata": {
+        "title": "Vidyalankar Institute of Management",
+        "category": "SOP",
+        "department": "Mms",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "20. VIT Training & Development_HR.docx",
+      "original_path": "20. VIT Training & Development_HR.doc",
+      "hash": "ff496e8e627a235409542835c18dad9919ae23eeaaca67b4d1f80e05c92bd340",
+      "character_count": 6792,
+      "paragraphs": 50,
+      "tables": 7,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Training & Development",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "21. VIT Affiliation Management.docx",
+      "original_path": "21. VIT Affiliation Management.doc",
+      "hash": "d1f1c17a92d0a5e058195651cd79e62b8eaeb7fd50a61b5ee1e52b9ef4b1b2e0",
+      "character_count": 12045,
+      "paragraphs": 69,
+      "tables": 8,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Affiliation Management",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "22. VIT Enquiry Handling and Front Office.docx",
+      "original_path": "22. VIT Enquiry Handling and Front Office.doc",
+      "hash": "589a499e60d520426fea46b7030aa11f9d231bae94cdc421d8fa9cec85628cd4",
+      "character_count": 6121,
+      "paragraphs": 47,
+      "tables": 4,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Enquiry Handling And Front Office",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "3.VIT  Fees and Billing(3).docx",
+      "original_path": "3.VIT  Fees and Billing(3).docx.docx",
+      "hash": "390840cc336b28d23da6bcc635a2101ff4b51ae41501479041840e81875fea1f",
+      "character_count": 14771,
+      "paragraphs": 101,
+      "tables": 13,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Fees And Billing",
+        "version": "3.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "4.VIT Faculty Recruitment & Evaluation.docx",
+      "original_path": "4.VIT Faculty Recruitment & Evaluation.doc",
+      "hash": "a2119bdb38a11185850058f10e3bbdec8caabc1e5a371c7da0de899d58bcbe4a",
+      "character_count": 36398,
+      "paragraphs": 111,
+      "tables": 42,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Faculty Recruitment & Evaluation",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "5. VIT Academics.docx",
+      "original_path": "5. VIT Academics.docx",
+      "hash": "da50bf1f11237fa834ce5e7ae789842b2abb6603da9c9e29e78456839d1dc57f",
+      "character_count": 28096,
+      "paragraphs": 80,
+      "tables": 30,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Academics",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "6.VIT Student Activities.docx",
+      "original_path": "6.VIT Student Activities.doc",
+      "hash": "1d74b5bd1e04856a9c099fff2db5ac5c77471f68def162ba6a53a5218a903e5c",
+      "character_count": 18388,
+      "paragraphs": 59,
+      "tables": 13,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Student Activities",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "7.VIT Committee (1).docx",
+      "original_path": "7.VIT Committee (1).docx",
+      "hash": "9bb68e9d06a236fc51c1b23e6f5f35758575852d4e6cd139e16b874bbcf02dd4",
+      "character_count": 35074,
+      "paragraphs": 146,
+      "tables": 52,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Committee",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "8.VIT ExaminationDM.docx",
+      "original_path": "8.VIT ExaminationDM.docx",
+      "hash": "07cfde474cdd576fdb37f503897b7dfc4e5a9cf4d89ad1d2dd7697ac8b6b552e",
+      "character_count": 48541,
+      "paragraphs": 130,
+      "tables": 53,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Examination",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    },
+    {
+      "filename": "9. VIT Training & Placement 1.0.docx",
+      "original_path": "9. VIT Training & Placement 1.0.doc",
+      "hash": "3d3db81cdaf3a660a2dec001a09374a6fcc456853036971e0a114a920890f5af",
+      "character_count": 40878,
+      "paragraphs": 146,
+      "tables": 67,
+      "metadata": {
+        "title": "Vidyalankar Institute of Technology",
+        "category": "SOP",
+        "department": "Training & Placement",
+        "version": "1.0",
+        "date": "2026-06-25",
+        "access_level": "Public"
+      }
+    }
+  ]
+}
