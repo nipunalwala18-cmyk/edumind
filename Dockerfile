@@ -33,5 +33,4 @@ RUN mkdir -p data/staging vector_store/chroma_db
 # Expose FastAPI port
 EXPOSE 8000
 
-# Startup: seed the DB if needed, then launch uvicorn
-CMD ["sh", "-c", "python seed_users.py; uvicorn backend.app:app --host 0.0.0.0 --port 8000 --workers 1"]
+CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

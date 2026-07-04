@@ -64,6 +64,33 @@ def on_startup():
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+    # Autoseed default users if table is empty
+    from backend.database import SessionLocal, User
+    from backend.auth import hash_password
+    db = SessionLocal()
+    try:
+        if db.query(User).count() == 0:
+            logging.info("[STARTUP] Database is empty. Seeding default accounts...")
+            seed_users = [
+                {"username": "public_user",  "password": "Public@123",  "role": "Public"},
+                {"username": "student_test", "password": "Student@123", "role": "Student"},
+                {"username": "faculty_test", "password": "Faculty@123", "role": "Faculty"},
+                {"username": "admin_test",   "password": "Admin@123",   "role": "Admin"},
+            ]
+            for u in seed_users:
+                db.add(User(
+                    username=u["username"],
+                    hashed_password=hash_password(u["password"]),
+                    role=u["role"]
+                ))
+            db.commit()
+            logging.info("[STARTUP] Successfully seeded default accounts.")
+        else:
+            logging.info("[STARTUP] Database already initialized with users.")
+    except Exception as e:
+        logging.error(f"[STARTUP] Failed to seed database: {e}")
+    finally:
+        db.close()
 
 
 # ── Serve frontend ─────────────────────────────────────────────────────────────
