@@ -67,7 +67,7 @@ def _ollama_response_body(
     completion_tokens: int = 50,
     done_reason: str = "stop",
     eval_duration_ns: int = 2_000_000_000,
-    model: str = "qwen3:8b",
+    model: str = "qwen2.5:7b",
 ) -> dict:
     return {
         "model":             model,
@@ -84,7 +84,7 @@ def _ollama_response_body(
 
 def _stream_lines(
     chunks: list[str],
-    model: str = "qwen3:8b",
+    model: str = "qwen2.5:7b",
     prompt_tokens: int = 100,
     completion_tokens: int = 30,
 ) -> list[str]:
@@ -136,12 +136,12 @@ class TestOllamaConfig:
     def test_defaults(self):
         cfg = OllamaConfig()
         assert cfg.base_url      == "http://localhost:11434"
-        assert cfg.model         == "qwen3:8b"
+        assert cfg.model         == "qwen2.5:7b"
         assert cfg.temperature   == 0.7
         assert cfg.max_tokens    == 1024
         assert cfg.top_p         == 0.9
         assert cfg.repeat_penalty == 1.1
-        assert cfg.timeout       == 120.0
+        assert cfg.timeout       == 300.0
         assert cfg.max_retries   == 3
         assert cfg.retry_delay   == 1.0
 
@@ -190,7 +190,7 @@ class TestParseChatResponse:
         assert result["prompt_tokens"]     == 80
         assert result["completion_tokens"] == 40
         assert result["finish_reason"]     == "stop"
-        assert result["model_name"]        == "qwen3:8b"
+        assert result["model_name"]        == "qwen2.5:7b"
 
     def test_generation_time_conversion(self):
         # 2 billion nanoseconds == 2000 ms
@@ -245,7 +245,7 @@ class TestParseStreamLine:
 
     def test_done_line_returns_stats(self):
         line = json.dumps({
-            "done": True, "done_reason": "stop", "model": "qwen3:8b",
+            "done": True, "done_reason": "stop", "model": "qwen2.5:7b",
             "prompt_eval_count": 100, "eval_count": 50,
             "eval_duration": 1_000_000_000,
         })
@@ -328,9 +328,9 @@ class TestWithRetry:
 
 class TestBuildPayload:
     def test_includes_model(self):
-        client  = OllamaClient(OllamaConfig(model="qwen3:8b"))
+        client  = OllamaClient(OllamaConfig(model="qwen2.5:7b"))
         payload = client._build_payload([{"role": "user", "content": "hi"}], stream=False, overrides={})
-        assert payload["model"] == "qwen3:8b"
+        assert payload["model"] == "qwen2.5:7b"
 
     def test_stream_flag_propagated(self):
         client  = OllamaClient()
@@ -629,7 +629,7 @@ class TestRAGResponse:
     def _make(self, **kwargs) -> RAGResponse:
         defaults = dict(
             answer="The fee is due on the 15th.",
-            model_name="qwen3:8b",
+            model_name="qwen2.5:7b",
             finish_reason="stop",
             prompt_tokens=100,
             completion_tokens=50,
@@ -644,7 +644,7 @@ class TestRAGResponse:
     def test_required_fields(self):
         r = self._make()
         assert r.answer      == "The fee is due on the 15th."
-        assert r.model_name  == "qwen3:8b"
+        assert r.model_name  == "qwen2.5:7b"
         assert r.total_tokens == 150
 
     def test_tokens_per_second(self):
@@ -657,7 +657,7 @@ class TestRAGResponse:
 
     def test_summary_contains_model(self):
         r = self._make()
-        assert "qwen3:8b" in r.summary()
+        assert "qwen2.5:7b" in r.summary()
 
     def test_summary_contains_latency(self):
         r = self._make(latency_ms=500.0)
@@ -679,7 +679,7 @@ class TestRAGResponse:
 def _mock_client_chat(raw: dict) -> OllamaClient:
     client = MagicMock(spec=OllamaClient)
     client.chat.return_value = raw
-    client.model = "qwen3:8b"
+    client.model = "qwen2.5:7b"
     return client
 
 
@@ -750,7 +750,7 @@ class TestRAGEngineGenerate:
         raw               = _parse_chat_response(_ollama_response_body())
         raw["latency_ms"] = 100.0
         mock_client.chat.return_value = raw
-        mock_client.model = "qwen3:8b"
+        mock_client.model = "qwen2.5:7b"
 
         engine = RAGEngine(client=mock_client)
         engine.generate(_make_built_prompt(), temperature=0.1)
@@ -819,3 +819,17 @@ class TestRAGEngineSingleton:
         mock_client = MagicMock(spec=OllamaClient)
         engine      = get_rag_engine(client=mock_client)
         assert engine._client is mock_client
+
+    def test_backend_selection_ollama(self):
+        with patch.dict(os.environ, {"LLM_BACKEND": "ollama"}):
+            reset_rag_engine()
+            engine = get_rag_engine()
+            from rag.ollama_client import OllamaClient
+            assert isinstance(engine._client, OllamaClient)
+
+    def test_backend_selection_hf(self):
+        with patch.dict(os.environ, {"LLM_BACKEND": "hf"}):
+            reset_rag_engine()
+            engine = get_rag_engine()
+            from rag.hf_client import HFClient
+            assert isinstance(engine._client, HFClient)

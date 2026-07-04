@@ -1,7 +1,31 @@
 /* ═══════════════════════════════════════════════════════════════════
    EduMind — front-end app logic
    ═══════════════════════════════════════════════════════════════════ */
-const API = 'http://localhost:8000';
+let API = localStorage.getItem('EDUMIND_API_URL');
+if (!API) {
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    API = 'http://localhost:8000';
+  } else {
+    API = window.location.origin;
+  }
+}
+
+function setApiUrl(val) {
+  const cleanVal = val.trim();
+  if (cleanVal) {
+    localStorage.setItem('EDUMIND_API_URL', cleanVal);
+    API = cleanVal;
+  } else {
+    localStorage.removeItem('EDUMIND_API_URL');
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+      API = 'http://localhost:8000';
+    } else {
+      API = window.location.origin;
+    }
+  }
+  if (document.getElementById('landingApiUrl')) document.getElementById('landingApiUrl').value = API;
+  if (document.getElementById('apiUrl')) document.getElementById('apiUrl').value = API;
+}
 
 const S = {
   user: null, role: null, token: null, isPublic: false,
@@ -81,6 +105,10 @@ function renderLanding() {
         <button class="btn btn-outline btn-lg" onclick="openLogin()">Sign in for more</button>
         <span class="hero-note">${I.lock} No account needed to browse</span>
       </div>
+      <div class="api-config-strip" style="margin-top: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-3); z-index: 10; position: relative;">
+        <span>API Endpoint:</span>
+        <input id="landingApiUrl" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 0.25rem 0.5rem; color: var(--text-2); font-family: monospace; font-size: 0.75rem; width: 220px;" placeholder="http://localhost:8000" value="${API || ''}" onchange="setApiUrl(this.value)">
+      </div>
     </section>
 
     <div class="feature-strip">
@@ -100,6 +128,7 @@ function renderLanding() {
       <form onsubmit="doLogin(event)">
         <div class="field"><label>Username</label><input id="u" placeholder="e.g. student_test" autocomplete="off" required></div>
         <div class="field"><label>Password</label><input id="p" type="password" placeholder="••••••••" required></div>
+        <div class="field"><label>API Endpoint</label><input id="apiUrl" placeholder="http://localhost:8000" value="${API || ''}" autocomplete="off" onchange="setApiUrl(this.value)"></div>
         <button type="submit" class="modal-submit">Continue</button>
       </form>
       <div class="demo-box">
@@ -112,13 +141,18 @@ function renderLanding() {
   </div>`;
 }
 
-const openLogin = () => $('loginModal').classList.add('active');
+const openLogin = () => {
+  $('loginModal').classList.add('active');
+  $('apiUrl').value = API;
+};
 const closeLogin = () => $('loginModal').classList.remove('active');
 const fill = (u, p) => { $('u').value = u; $('p').value = p; };
 
 async function doLogin(e) {
   e.preventDefault();
   const err = $('loginErr');
+  const endpoint = $('apiUrl').value.trim();
+  setApiUrl(endpoint);
   try {
     const r = await fetch(`${API}/api/auth/login`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -635,7 +669,7 @@ function logout() {
    function referenced by an inline handler MUST appear here. */
 Object.assign(window, {
   // auth / landing
-  openLogin, closeLogin, enterGuest, fill, doLogin, logout,
+  openLogin, closeLogin, enterGuest, fill, doLogin, logout, setApiUrl,
   // navigation
   go, newChat, openConversation, deleteConversation,
   // chat

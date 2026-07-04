@@ -16,6 +16,7 @@ Modular swap note:
 
 from __future__ import annotations
 
+import os
 import json
 import logging
 import random
@@ -24,6 +25,10 @@ from typing import Iterator, Optional
 
 import httpx
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+# Load process environment variables from local .env file if present
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +40,10 @@ logger = logging.getLogger(__name__)
 class OllamaConfig(BaseModel):
     """All parameters controlling the Ollama connection and generation."""
 
-    base_url:       str   = Field(default="http://localhost:11434")
-    model:          str   = Field(default="qwen3:8b")
+    base_url:       str   = Field(default=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"))
+    model:          str   = Field(default=os.environ.get("OLLAMA_MODEL", "qwen2.5:7b"))
 
-    # Reasoning toggle. qwen3 is a hybrid reasoning model: by default newer
+    # Reasoning toggle. qwen2.5 is a hybrid reasoning model: by default newer
     # Ollama builds stream the chain-of-thought into a separate `thinking`
     # field and leave `message.content` empty until reasoning finishes — which
     # (a) yields zero text chunks on the streaming path and (b) blows past the
@@ -46,7 +51,7 @@ class OllamaConfig(BaseModel):
     # spent thinking. We don't surface CoT to users, so disable it: content is
     # then emitted directly and immediately.
     think:          bool  = Field(default=False,
-                                  description="Ollama `think` flag. False disables qwen3 reasoning.")
+                                  description="Ollama `think` flag. False disables qwen2.5 reasoning.")
 
     # Generation options (mapped to Ollama's /api/chat `options` dict)
     temperature:    float = Field(default=0.7,  ge=0.0, le=2.0)
@@ -56,7 +61,7 @@ class OllamaConfig(BaseModel):
     repeat_penalty: float = Field(default=1.1,  ge=0.0, le=2.0)
 
     # HTTP / retry
-    timeout:      float = Field(default=120.0, gt=0,
+    timeout:      float = Field(default=300.0, gt=0,
                                 description="Read timeout in seconds (generation can be slow).")
     max_retries:  int   = Field(default=3, ge=0, le=10)
     retry_delay:  float = Field(default=1.0, gt=0,
@@ -104,9 +109,9 @@ class OllamaResponseError(OllamaError):
 
 def _strip_thinking_tags(text: str) -> str:
     """
-    Removes Qwen3 chain-of-thought blocks from the answer.
+    Removes Qwen2.5 chain-of-thought blocks from the answer.
 
-    Qwen3 may wrap its reasoning in <think>...</think> before the final
+    Qwen2.5 may wrap its reasoning in <think>...</think> before the final
     answer.  When the model emits only a thinking block and no trailing
     text, `content` arrives as an empty string after stripping.  We
     preserve whatever comes after the closing tag so callers always
@@ -292,9 +297,13 @@ class OllamaClient:
         payload   = self._build_payload(messages, stream=True, overrides=overrides)
         url       = f"{self._cfg.base_url}/api/chat"
         timeout   = httpx.Timeout(connect=10.0, read=self._cfg.timeout, write=10.0, pool=5.0)
+        headers   = {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "any"
+        }
 
         try:
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(timeout=timeout, headers=headers) as client:
                 with client.stream("POST", url, json=payload) as response:
                     self._check_status(response.status_code, url)
                     for line in response.iter_lines():
@@ -317,7 +326,8 @@ class OllamaClient:
     def health_check(self) -> bool:
         """Returns True if Ollama is reachable (GET /), False otherwise."""
         try:
-            with httpx.Client(timeout=httpx.Timeout(5.0)) as client:
+            headers = {"ngrok-skip-browser-warning": "any"}
+            with httpx.Client(timeout=httpx.Timeout(5.0), headers=headers) as client:
                 r = client.get(self._cfg.base_url)
                 return r.status_code == 200
         except Exception:
@@ -356,9 +366,15 @@ class OllamaClient:
         """Executes a non-streaming POST and returns the response body as dict."""
         url     = f"{self._cfg.base_url}/api/chat"
         timeout = httpx.Timeout(connect=10.0, read=self._cfg.timeout, write=10.0, pool=5.0)
+        # Ollama validates Origin header; set it to the base_url so the check passes
+        # when accessed through a Cloudflare tunnel (non-localhost origin).
+        headers = {
+            "Content-Type": "application/json",
+            "ngrok-skip-browser-warning": "any"
+        }
 
         try:
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(timeout=timeout, headers=headers) as client:
                 response = client.post(url, json=payload)
         except httpx.ConnectError as exc:
             raise OllamaConnectionError(
@@ -386,7 +402,7 @@ class OllamaClient:
         if status_code == 404:
             raise OllamaModelNotFoundError(
                 f"Model not found (HTTP 404) at {url}. "
-                "Pull the model first: ollama pull qwen3:8b"
+                "Pull the model first: ollama pull qwen2.5:7b"
             )
         raise OllamaResponseError(f"Ollama returned HTTP {status_code} for {url}.")
 

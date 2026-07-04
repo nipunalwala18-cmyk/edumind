@@ -1,12 +1,16 @@
 """
 rag/rag_engine.py
 ------------------
-RAG Engine — converts BuiltPrompt into a grounded answer via Ollama.
+RAG Engine — converts BuiltPrompt into a grounded answer via the configured LLM.
+
+Supported backends (set LLM_BACKEND in .env):
+    ollama  (default) — local Ollama server  (OllamaClient)
+    hf                — HuggingFace Inference API (HFClient)
 
 Pipeline:
     BuiltPrompt.messages
-        ↓  OllamaClient.chat() / .chat_stream()
-    raw Ollama response
+        ↓  <client>.chat() / .chat_stream()
+    raw LLM response
         ↓  RAGEngine._build_response()
     RAGResponse
 
@@ -17,10 +21,14 @@ It only cares about: prompt in, answer out.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Iterator, Optional
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+load_dotenv()
 
 from rag.ollama_client import OllamaClient, OllamaConfig, get_ollama_client
 from rag.prompt_schema import BuiltPrompt
@@ -201,17 +209,33 @@ _engine_instance: Optional[RAGEngine] = None
 
 def get_rag_engine(
     config: Optional[OllamaConfig] = None,
-    client: Optional[OllamaClient] = None,
+    client=None,
 ) -> RAGEngine:
     """
     Returns the process-level RAGEngine singleton.
+
+    Backend selection via LLM_BACKEND environment variable:
+        LLM_BACKEND=ollama  (default) — uses OllamaClient
+        LLM_BACKEND=hf              — uses HFClient (HuggingFace Inference API)
 
     Pass config or client to configure the first call; subsequent calls
     return the same instance regardless of arguments.
     """
     global _engine_instance
     if _engine_instance is None:
-        _engine_instance = RAGEngine(client or (OllamaClient(config) if config else None))
+        if client is not None:
+            _engine_instance = RAGEngine(client)
+        else:
+            backend = os.environ.get("LLM_BACKEND", "ollama").strip().lower()
+            if backend == "hf":
+                from rag.hf_client import get_hf_client
+                logger.info("[RAG_ENGINE] Using HuggingFace backend (LLM_BACKEND=hf)")
+                _engine_instance = RAGEngine(get_hf_client())
+            else:
+                logger.info("[RAG_ENGINE] Using Ollama backend (LLM_BACKEND=ollama)")
+                _engine_instance = RAGEngine(
+                    get_ollama_client(config) if config else get_ollama_client()
+                )
     return _engine_instance
 
 

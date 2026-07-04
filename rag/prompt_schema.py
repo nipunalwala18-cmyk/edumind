@@ -13,7 +13,7 @@ Model hierarchy
     PromptConfig        — configurable knobs passed to PromptBuilder.build()
     ContextChunk        — one prepared chunk ready for the context block
     ConflictGroup       — detected version conflict across chunks
-    BuiltPrompt         — the fully assembled prompt, ready for Qwen3:8B
+    BuiltPrompt         — the fully assembled prompt, ready for Qwen2.5:7B
 
 LangGraph note:
     BuiltPrompt.messages is list[dict] in Ollama/OpenAI chat format.
@@ -184,7 +184,7 @@ class PromptConfig(BaseModel):
 
 class BuiltPrompt(BaseModel):
     """
-    The fully assembled prompt, ready for the Qwen3:8B Ollama call (Phase 9).
+    The fully assembled prompt, ready for the Qwen2.5:7B Ollama call (Phase 9).
 
     Primary consumer interface
     --------------------------
@@ -204,7 +204,7 @@ class BuiltPrompt(BaseModel):
     user_question:  str  = Field(..., description="Original user question (not preprocessed).")
     system_prompt:  str  = Field(..., description="Full system instruction block.")
     context_block:  str  = Field(..., description="Assembled numbered [SOURCE N] context blocks.")
-    user_message:   str  = Field(..., description="User turn sent to Qwen3 (context + question).")
+    user_message:   str  = Field(..., description="User turn sent to Qwen2.5 (context + question).")
 
     # --- Ollama/OpenAI chat messages (primary output) ---
     messages: list[dict] = Field(

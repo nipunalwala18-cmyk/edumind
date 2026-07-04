@@ -13,7 +13,7 @@ Wires together every completed phase into a single coherent call:
         v  [Phase 7] PromptBuilder (system prompt + context block + question)
     BuiltPrompt
         |
-        v  [Phase 7B] RAGEngine  ->  Qwen3:8B via Ollama
+        v  [Phase 7B] RAGEngine  ->  Qwen2.5:7B via Ollama
     RAGResponse  (answer + token counts + timing)
         |
         v  [Phase 8] CitationEngine (dedup, version-prefer, inline refs)
@@ -99,7 +99,7 @@ class PipelineConfig(BaseModel):
     Group 2 -- Prompt
         Controls context window size, template variant, and metadata display.
     Group 3 -- Generation
-        Controls Qwen3:8B sampling parameters via Ollama.
+        Controls Qwen2.5:7B sampling parameters via Ollama.
     """
 
     # ---- Retrieval ---------------------------------------------------------
@@ -153,7 +153,7 @@ class PipelineConfig(BaseModel):
     # ---- Generation --------------------------------------------------------
     temperature: float = Field(
         default=0.7, ge=0.0, le=2.0,
-        description="Sampling temperature for Qwen3:8B.",
+        description="Sampling temperature for Qwen2.5:7B.",
     )
     max_tokens: int = Field(
         default=1024, ge=1, le=32768,
@@ -334,7 +334,7 @@ class RAGPipeline:
         engine requires the complete answer text.  Use run() for citations.
 
         Yields:
-            str -- incremental text tokens from Qwen3:8B.
+            str -- incremental text tokens from Qwen2.5:7B.
         """
         cfg  = config_overrides or self._config
         role = _normalize_role(role)

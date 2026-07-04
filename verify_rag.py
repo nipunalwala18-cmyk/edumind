@@ -92,12 +92,12 @@ def check_ollama() -> None:
         _RESULTS["Ollama server"] = False
 
 
-def check_qwen3() -> None:
-    """Check 2: qwen3:8b model available via Ollama."""
-    _section("Check 2 -- Qwen3:8b Model")
+def check_qwen2_5() -> None:
+    """Check 2: qwen2.5:7b model available via Ollama."""
+    _section("Check 2 -- Qwen2.5:7b Model")
     if not _RESULTS.get("Ollama server"):
-        _check("qwen3:8b available", False, "skipped -- Ollama not reachable")
-        _RESULTS["Qwen3 model"] = False
+        _check("qwen2.5:7b available", False, "skipped -- Ollama not reachable")
+        _RESULTS["Qwen2.5 model"] = False
         return
     try:
         from rag.ollama_client import get_ollama_client
@@ -110,11 +110,11 @@ def check_qwen3() -> None:
             repeat_penalty=1.0,
         )
         answer = result.get("answer", "").strip()
-        _check("qwen3:8b generates text", True, f'reply={answer!r}')
-        _RESULTS["Qwen3 model"] = True
+        _check("qwen2.5:7b generates text", True, f'reply={answer!r}')
+        _RESULTS["Qwen2.5 model"] = True
     except Exception as exc:
-        _check("qwen3:8b generates text", False, str(exc)[:80])
-        _RESULTS["Qwen3 model"] = False
+        _check("qwen2.5:7b generates text", False, str(exc)[:80])
+        _RESULTS["Qwen2.5 model"] = False
 
 
 def check_embedding_model() -> None:
@@ -322,8 +322,8 @@ _SAMPLE_QUERIES = [
 def run_e2e_queries() -> None:
     _section("Check 11 -- End-to-End RAG Pipeline")
 
-    if not _RESULTS.get("Qwen3 model"):
-        _check("End-to-end RAG", False, "skipped -- Qwen3 not available")
+    if not _RESULTS.get("Qwen2.5 model"):
+        _check("End-to-end RAG", False, "skipped -- Qwen2.5 not available")
         _RESULTS["End-to-end RAG"] = False
         return
 
@@ -434,7 +434,7 @@ def main() -> int:
     _header("VIT AGENTIC AI -- RAG PIPELINE VERIFICATION")
 
     check_ollama()
-    check_qwen3()
+    check_qwen2_5()
     check_embedding_model()
     check_reranker()
     check_sqlite()

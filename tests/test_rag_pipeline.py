@@ -169,7 +169,7 @@ def _make_rag_response(answer: str = "Students need 75% attendance [SOURCE 1].")
     from rag.rag_engine import RAGResponse
     return RAGResponse(
         answer             = answer,
-        model_name         = "qwen3:8b",
+        model_name         = "qwen2.5:7b",
         finish_reason      = "stop",
         prompt_tokens      = 400,
         completion_tokens  = 120,
@@ -796,7 +796,7 @@ class TestRAGPipelineIntegration:
 @pytest.mark.slow
 class TestRAGPipelineOllama:
     """
-    End-to-end tests that require a running Ollama server with qwen3:8b.
+    End-to-end tests that require a running Ollama server with qwen2.5:7b.
     Skipped automatically when Ollama is offline.
     """
 

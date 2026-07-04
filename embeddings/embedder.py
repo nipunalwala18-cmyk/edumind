@@ -58,6 +58,7 @@ def get_embedder() -> "BGEEmbedder":
     global _embedder_instance
     if _embedder_instance is None:
         _embedder_instance = BGEEmbedder()
+    if not _embedder_instance.is_loaded:
         _embedder_instance.load()
     return _embedder_instance
 

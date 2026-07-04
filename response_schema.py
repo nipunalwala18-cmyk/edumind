@@ -146,7 +146,7 @@ class RAGPipelineResponse(BaseModel):
     # --- Answer (three forms) ---
     answer: str = Field(
         ...,
-        description="Raw LLM-generated answer, exactly as returned by Qwen3.",
+        description="Raw LLM-generated answer, exactly as returned by Qwen2.5.",
     )
     answer_with_refs: str = Field(
         ...,

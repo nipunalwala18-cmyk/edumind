@@ -9,7 +9,7 @@ version: "3.9"
 # Persistent volumes:
 #   chroma_data — ChromaDB vector store
 #   sqlite_data — SQLite ledger (ingestion_ledger.db) + institutional.db
-#   ollama_data — Ollama model cache (avoids re-downloading qwen3:8b on restart)
+#   ollama_data — Ollama model cache (avoids re-downloading qwen2.5:7b on restart)
 #   staging_vol — uploaded document staging area
 #
 # Usage:
@@ -55,8 +55,8 @@ services:
       - ollama_data:/root/.ollama
     entrypoint: >
       sh -c "
-        OLLAMA_HOST=http://ollama:11434 ollama pull qwen3:8b &&
-        echo 'Model qwen3:8b ready.'
+        OLLAMA_HOST=http://ollama:11434 ollama pull qwen2.5:7b &&
+        echo 'Model qwen2.5:7b ready.'
       "
     restart: "no"
 

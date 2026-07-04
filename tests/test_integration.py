@@ -125,7 +125,7 @@ _MOCK_RAG_RESULT = {
     "generation_time_ms": 1200.0,
     "chunks_in_context":  5,
     "has_conflicts":      False,
-    "model_name":         "qwen3:8b",
+    "model_name":         "qwen2.5:7b",
     "template_used":      "default",
 }
 
