@@ -34,4 +34,4 @@ RUN mkdir -p data/staging vector_store/chroma_db
 EXPOSE 8000
 
 # Startup: seed the DB if needed, then launch uvicorn
-CMD ["sh", "-c", "python seed_users.py 2>/dev/null; uvicorn backend.app:app --host 0.0.0.0 --port 8000 --workers 1"]
+CMD ["sh", "-c", "python seed_users.py; uvicorn backend.app:app --host 0.0.0.0 --port 8000 --workers 1"]
