@@ -1,0 +1,37 @@
+# ── EduMind AI — Application Dockerfile ────────────────────────────────────────
+# Base: python:3.11-slim
+FROM python:3.11-slim AS deps
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# System packages required by python-docx, sentence-transformers, chromadb
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies first
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# ── App layer ────────────────────────────────────────────────────────────────
+FROM deps AS app
+
+WORKDIR /app
+
+# Copy application source
+COPY . .
+
+# Create persistent directories
+RUN mkdir -p data/staging vector_store/chroma_db
+
+# Expose FastAPI port
+EXPOSE 8000
+
+# Startup: seed the DB if needed, then launch uvicorn
+CMD ["sh", "-c", "python seed_users.py 2>/dev/null; uvicorn backend.app:app --host 0.0.0.0 --port 8000 --workers 1"]
