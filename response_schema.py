@@ -24,7 +24,6 @@ from typing import Optional, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from rag.prompt_schema import ConfidenceLabel
 from rag.citation_schema import Citation
 
 if TYPE_CHECKING:
@@ -48,41 +47,28 @@ FALLBACK_ANSWER: str = (
 
 def compute_confidence(
     results: "list[RetrievalResult]",
-) -> tuple[ConfidenceLabel, float]:
+) -> tuple[str, float]:
     """
     Infers answer confidence purely from retrieval signals — no LLM call.
-
-    Scoring rules:
-        HIGH   : best_score >= 0.70  AND  at least 2 distinct supporting documents
-        MEDIUM : best_score >= 0.40  OR   at least 2 distinct supporting documents
-        LOW    : anything else
-        UNKNOWN: no results
 
     Args:
         results: list[RetrievalResult] in rank order (index 0 = best).
 
     Returns:
-        (ConfidenceLabel, effective_score_of_top_result)
-
-    Both rerank_score and cosine-similarity score are sigmoid-normalized to
-    [0, 1], so the same thresholds apply regardless of whether reranking ran.
+        (confidence_percentage_str, raw_confidence_score)
     """
     if not results:
-        return ConfidenceLabel.UNKNOWN, 0.0
+        return "0%", 0.0
 
     best = results[0]
-    effective_score: float = (
+    raw_confidence_score: float = (
         best.rerank_score
         if best.rerank_score is not None
         else best.score
     )
-    n_unique_docs = len({r.citation.doc_id for r in results})
-
-    if effective_score >= 0.70 and n_unique_docs >= 2:
-        return ConfidenceLabel.HIGH, effective_score
-    if effective_score >= 0.40 or n_unique_docs >= 2:
-        return ConfidenceLabel.MEDIUM, effective_score
-    return ConfidenceLabel.LOW, effective_score
+    raw_confidence_score = max(0.0, min(1.0, raw_confidence_score))
+    confidence_percentage = round(raw_confidence_score * 100)
+    return f"{confidence_percentage}%", raw_confidence_score
 
 
 # ---------------------------------------------------------------------------
@@ -203,12 +189,9 @@ class RAGPipelineResponse(BaseModel):
     )
 
     # --- Confidence ---
-    confidence: ConfidenceLabel = Field(
-        default=ConfidenceLabel.UNKNOWN,
-        description=(
-            "Retrieval-signal-based confidence: High / Medium / Low / Unknown. "
-            "Never inferred from the LLM answer text."
-        ),
+    confidence: str = Field(
+        default="0%",
+        description="Retrieval-signal-based confidence percentage: e.g., '87%'.",
     )
     confidence_score: float = Field(
         default=0.0,
@@ -260,7 +243,7 @@ class RAGPipelineResponse(BaseModel):
             f"query={self.query[:50]!r} | "
             f"role={self.role} | "
             f"docs={self.retrieved_documents} | "
-            f"confidence={self.confidence.value} | "
+            f"confidence={self.confidence} | "
             f"tokens={self.total_tokens} | "
             f"latency={self.processing_time_ms:.0f}ms"
         )
@@ -278,7 +261,7 @@ class RAGPipelineResponse(BaseModel):
             f"Mode       : {self.retrieval_mode}",
             f"Chunks     : {self.chunks_in_context} in context | "
             f"{self.retrieved_chunks} retrieved",
-            f"Confidence : {self.confidence.value} (score={self.confidence_score:.4f})",
+            f"Confidence : {self.confidence} (score={self.confidence_score:.4f})",
             f"Tokens     : {self.total_tokens}",
             f"Latency    : retrieval={self.retrieval_time_ms:.0f}ms  "
             f"generation={self.generation_time_ms:.0f}ms  "

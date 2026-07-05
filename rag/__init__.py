@@ -19,7 +19,6 @@ RAG Engine (Phase 7B):
 
 from rag.prompt_schema import (
     BuiltPrompt,
-    ConfidenceLabel,
     ContextChunk,
     ConflictGroup,
     PromptConfig,
@@ -60,7 +59,7 @@ __all__ = [
     "PromptBuilder", "get_prompt_builder", "build_prompt",
     "BuiltPrompt", "PromptConfig", "PromptTemplate",
     "ContextChunk", "ConflictGroup",
-    "ConfidenceLabel", "confidence_from_score",
+    "confidence_from_score",
     # Ollama Client
     "OllamaClient", "OllamaConfig",
     "OllamaError", "OllamaConnectionError", "OllamaTimeoutError",

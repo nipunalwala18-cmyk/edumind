@@ -38,7 +38,7 @@ from rag_pipeline import (
     get_pipeline,
     reset_pipeline,
 )
-from rag.prompt_schema import ConfidenceLabel, PromptTemplate
+from rag.prompt_schema import PromptTemplate
 from rag.citation_schema import Citation
 
 
@@ -227,63 +227,63 @@ class TestNormalizeRole:
 class TestComputeConfidence:
     def test_no_results_returns_unknown(self):
         lbl, score = compute_confidence([])
-        assert lbl == ConfidenceLabel.UNKNOWN
+        assert lbl == "0%"
         assert score == 0.0
 
     def test_high_confidence_two_docs(self):
         r1 = _make_result("doc1", rerank_score=0.85)
         r2 = _make_result("doc2", rerank_score=0.75, rank=2)
         lbl, score = compute_confidence([r1, r2])
-        assert lbl == ConfidenceLabel.HIGH
+        assert lbl == "85%"
         assert abs(score - 0.85) < 1e-6
 
     def test_high_requires_two_docs(self):
-        # Score is high but only one document -- should be MEDIUM
         r1 = _make_result("doc1", rerank_score=0.90)
         lbl, score = compute_confidence([r1])
-        assert lbl == ConfidenceLabel.MEDIUM
+        assert lbl == "90%"
+        assert abs(score - 0.90) < 1e-6
 
     def test_medium_by_score(self):
         r1 = _make_result("doc1", rerank_score=0.55)
         lbl, score = compute_confidence([r1])
-        assert lbl == ConfidenceLabel.MEDIUM
+        assert lbl == "55%"
+        assert abs(score - 0.55) < 1e-6
 
     def test_medium_by_two_docs(self):
         r1 = _make_result("doc1", rerank_score=0.30)
         r2 = _make_result("doc2", rerank_score=0.25, rank=2)
         lbl, score = compute_confidence([r1, r2])
-        assert lbl == ConfidenceLabel.MEDIUM
+        assert lbl == "30%"
+        assert abs(score - 0.30) < 1e-6
 
     def test_low_confidence(self):
         r1 = _make_result("doc1", rerank_score=0.20)
         lbl, score = compute_confidence([r1])
-        assert lbl == ConfidenceLabel.LOW
+        assert lbl == "20%"
         assert abs(score - 0.20) < 1e-6
 
     def test_uses_rerank_score_preferentially(self):
         r = _make_result("doc1", score=0.30, rerank_score=0.75)
         lbl, score = compute_confidence([r])
-        # rerank_score=0.75 but only 1 doc -> MEDIUM
-        assert lbl == ConfidenceLabel.MEDIUM
+        assert lbl == "75%"
         assert abs(score - 0.75) < 1e-6
 
     def test_falls_back_to_score_when_no_rerank(self):
         r = _make_result("doc1", score=0.80, rerank_score=None)
         lbl, score = compute_confidence([r])
-        # score=0.80 but only 1 doc -> MEDIUM
-        assert lbl == ConfidenceLabel.MEDIUM
+        assert lbl == "80%"
         assert abs(score - 0.80) < 1e-6
 
     def test_boundary_exact_070(self):
         r1 = _make_result("doc1", rerank_score=0.70)
         r2 = _make_result("doc2", rerank_score=0.65, rank=2)
         lbl, _ = compute_confidence([r1, r2])
-        assert lbl == ConfidenceLabel.HIGH
+        assert lbl == "70%"
 
     def test_boundary_exact_040(self):
         r1 = _make_result("doc1", rerank_score=0.40)
         lbl, _ = compute_confidence([r1])
-        assert lbl == ConfidenceLabel.MEDIUM
+        assert lbl == "40%"
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +349,7 @@ class TestRAGPipelineResponseModel:
         r = self._build()
         assert r.answer == "Test answer."
         assert r.role == "Student"
-        assert r.confidence == ConfidenceLabel.UNKNOWN
+        assert r.confidence == "0%"
         assert r.citations == []
 
     def test_is_fallback_true(self):
@@ -370,19 +370,19 @@ class TestRAGPipelineResponseModel:
 
     def test_short_summary(self):
         r = self._build(
-            confidence=ConfidenceLabel.HIGH,
+            confidence="85%",
             total_tokens=500,
             processing_time_ms=4200.0,
         )
         s = r.short_summary()
         assert "Student" in s
-        assert "High" in s
+        assert "85%" in s
         assert "tokens=500" in s
 
     def test_to_display(self):
         r = self._build(
             formatted_answer="Answer text here.\n\nSources:\n1. Test SOP",
-            confidence=ConfidenceLabel.MEDIUM,
+            confidence="55%",
             retrieval_mode="hybrid+rerank",
         )
         display = r.to_display()
@@ -391,10 +391,10 @@ class TestRAGPipelineResponseModel:
         assert "hybrid+rerank" in display
 
     def test_json_round_trip(self):
-        r = self._build(confidence=ConfidenceLabel.HIGH)
+        r = self._build(confidence="90%")
         import json
         data = json.loads(r.model_dump_json())
-        assert data["confidence"] == "High"
+        assert data["confidence"] == "90%"
         assert data["answer"] == "Test answer."
 
 
@@ -501,7 +501,7 @@ class TestRAGPipelineUnit:
 
         assert resp.is_fallback is True
         assert resp.citations == []
-        assert resp.confidence == ConfidenceLabel.LOW
+        assert resp.confidence == "0%"
         assert resp.total_tokens == 0
         assert resp.retrieved_chunks == 0
 
@@ -572,7 +572,7 @@ class TestRAGPipelineUnit:
         ):
             resp = pipeline.run("Test", role="Student")
 
-        assert resp.confidence == ConfidenceLabel.HIGH
+        assert resp.confidence == "90%"
         assert resp.confidence_score >= 0.90
 
     def test_formatted_answer_contains_sources(self):
@@ -790,7 +790,7 @@ class TestRAGPipelineIntegration:
                    return_value=_make_retrieval_response([])):
             resp = pipeline.run("zzz xyzzy quux placeholder", role="Public")
         assert resp.is_fallback is True
-        assert resp.confidence == ConfidenceLabel.LOW
+        assert resp.confidence == "0%"
 
 
 @pytest.mark.slow
@@ -822,7 +822,7 @@ class TestRAGPipelineOllama:
         assert len(resp.answer) > 20
         assert resp.total_tokens > 0
         assert resp.processing_time_ms > 0
-        assert resp.confidence != ConfidenceLabel.UNKNOWN
+        assert resp.confidence != "0%"
         assert "Sources:" in resp.formatted_answer
 
     def test_role_filters_applied(self):

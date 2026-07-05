@@ -94,6 +94,11 @@ class QueryPreprocessor:
     def preprocess(self, text: str, remove_stopwords: bool = False) -> str:
         text = _CONTROL_CHAR_RE.sub(" ", text)
         text = _WHITESPACE_RE.sub(" ", text).strip().lower()
+
+        # Split common run-on typos with 'the' followed by keyword
+        for term in ["attendance", "admission", "scholarship", "examination", "library", "budget", "finance", "academics", "placement", "alumni", "fees", "billing", "mms"]:
+            text = text.replace(f"the{term}", f"the {term}")
+
         if remove_stopwords:
             tokens = text.split()
             if len(tokens) > 5:

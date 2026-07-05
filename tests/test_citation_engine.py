@@ -26,7 +26,7 @@ from rag.citation_engine import (
     get_citation_engine,
     reset_citation_engine,
 )
-from rag.prompt_schema import ContextChunk, ConfidenceLabel
+from rag.prompt_schema import ContextChunk
 
 
 # ===========================================================================

@@ -3,11 +3,7 @@
    ═══════════════════════════════════════════════════════════════════ */
 let API = localStorage.getItem('EDUMIND_API_URL');
 if (!API) {
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    API = 'http://localhost:8000';
-  } else {
-    API = window.location.origin;
-  }
+  API = window.location.origin;
 }
 
 function setApiUrl(val) {
@@ -17,11 +13,7 @@ function setApiUrl(val) {
     API = cleanVal;
   } else {
     localStorage.removeItem('EDUMIND_API_URL');
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      API = 'http://localhost:8000';
-    } else {
-      API = window.location.origin;
-    }
+    API = window.location.origin;
   }
   if (document.getElementById('landingApiUrl')) document.getElementById('landingApiUrl').value = API;
   if (document.getElementById('apiUrl')) document.getElementById('apiUrl').value = API;
@@ -81,6 +73,10 @@ const $ = (id) => document.getElementById(id);
 const esc = (t) => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
 const now = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 const initials = (n) => n.replace(/_/g, ' ').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+const extractConfidence = (content) => {
+  const match = content.match(/(?:\*\*|\[)Confidence:\s*(\d+%)(?:\*\*|\])/i);
+  return match ? match[1] : "";
+};
 
 /* ═══════════════════════════════════════════════════════════════════ LANDING */
 function renderLanding() {
@@ -364,10 +360,21 @@ function msgHTML(msg) {
       <div class="sh" onclick="this.nextElementSibling.classList.toggle('open')">${I.doc} ${count} source${count > 1 ? 's' : ''} ${I.chevron}</div>
       <div class="sl">${items}</div>
     </div>` : '';
+  const confVal = msg.confidence || (msg.isUser ? "" : extractConfidence(msg.content));
+  const confidenceBadge = (!msg.isUser && confVal) ? `
+    <span class="confidence-badge" style="background: rgba(99, 102, 241, 0.1); color: #6366f1; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 600; font-size: 0.75rem; border: 1px solid rgba(99, 102, 241, 0.2); margin-left: auto;">Confidence: ${esc(confVal)}</span>
+  ` : '';
   return `
   <div class="msg ${msg.isUser ? 'me' : 'bot'}">
     <div class="av ${msg.isUser ? 'me' : 'bot'}">${msg.isUser ? (S.isPublic ? 'G' : initials(S.user)) : I.spark}</div>
-    <div class="body"><div class="bubble">${esc(msg.content)}</div><div class="time">${msg.time || now()}</div>${srcs}</div>
+    <div class="body">
+      <div class="bubble">${esc(msg.content)}</div>
+      <div class="msg-meta" style="display: flex; align-items: center; gap: 1rem; margin-top: 0.35rem; font-size: 0.75rem; color: var(--text-3);">
+        <div class="time">${msg.time || now()}</div>
+        ${confidenceBadge}
+      </div>
+      ${srcs}
+    </div>
   </div>`;
 }
 
@@ -440,6 +447,7 @@ async function sendMsg() {
             ensureBubble();
             S.messages[botIdx].sources = meta.source_documents || [];
             S.messages[botIdx].citations = meta.citations || [];
+            S.messages[botIdx].confidence = meta.confidence || "";
             if (meta.session_id) S.sessionId = meta.session_id;
           } catch {}
           continue;
@@ -568,6 +576,7 @@ async function openConversation(id) {
       const rows = await r.json();
       S.messages = rows.map(m => ({
         content: m.content, isUser: m.is_user, sources: m.sources || [],
+        confidence: m.is_user ? "" : extractConfidence(m.content),
         time: new Date(m.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       }));
       S.sessionId = id; S.view = 'chat';

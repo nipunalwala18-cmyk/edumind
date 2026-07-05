@@ -167,7 +167,7 @@ class TestConfidence:
         out = M.node_confidence_evaluator(
             {"validated_results": results, "answer": "A detailed grounded answer.", "retry_count": 0}
         )
-        assert out["confidence"] == "High"
+        assert out["confidence"] == "90%"
         assert out["control"] == "finalize"
         assert out["hallucination_risk"] == "low"
 
@@ -176,7 +176,7 @@ class TestConfidence:
         out = M.node_confidence_evaluator(
             {"validated_results": results, "answer": "Maybe.", "retry_count": 0}
         )
-        assert out["confidence"] == "Low"
+        assert out["confidence"] == "20%"
         assert out["control"] == "reflect"
 
     def test_no_reflect_when_retries_exhausted(self):

@@ -527,30 +527,32 @@ def node_confidence_evaluator(state: AgentState) -> dict:
 
     try:
         from response_schema import compute_confidence
-        label, score = compute_confidence(results)
-        confidence = label.value
-        confidence_score = round(float(score), 4)
+        pct_str, raw_score = compute_confidence(results)
+        confidence = pct_str
+        confidence_score = round(float(raw_score), 4)
     except Exception as exc:
         logger.warning("[MAGENT] compute_confidence failed: %s", exc)
-        confidence, confidence_score = "UNKNOWN", 0.0
+        confidence, confidence_score = "0%", 0.0
 
-    # ConfidenceLabel values are title-case ("High"/"Low"/"Unknown") — compare
-    # case-insensitively so the reflection gate actually fires on low confidence.
-    conf_u = confidence.upper()
+    # The underlying logic for "LOW" or "UNKNOWN" confidence was:
+    # effective_score < 0.40 and n_unique_docs < 2, or no results.
+    n_unique_docs = len({r.citation.doc_id for r in results}) if results else 0
+    is_low_or_unknown = (confidence_score < 0.40 and n_unique_docs < 2) or not results
+
     top_score = max((getattr(r, "score", 0.0) for r in results), default=0.0)
     is_fallback = answer.strip().startswith(FALLBACK_ANSWER[:40])
     insufficient_context = (not results) or (top_score < CFG.insufficient_top_score)
 
     if insufficient_context and not is_fallback:
         hallucination_risk = "high"
-    elif conf_u in ("LOW", "UNKNOWN"):
+    elif is_low_or_unknown:
         hallucination_risk = "medium"
     else:
         hallucination_risk = "low"
 
     # Decide whether to reflect (retry) or finalise.
     needs_retry = (
-        (conf_u in ("LOW", "UNKNOWN") or insufficient_context or hallucination_risk == "high")
+        (is_low_or_unknown or insufficient_context or hallucination_risk == "high")
         and not is_fallback
         and confidence_score < CFG.reflection_confidence_floor
         and retry_count < CFG.max_reflection_retries
@@ -739,7 +741,7 @@ def run_multi_agent(question: str, role: str, memory: Optional[list] = None) -> 
             "answer": "The agent encountered an error. Please try again.",
             "answer_with_refs": "",
             "source_documents": [], "citations": [],
-            "confidence": "UNKNOWN", "confidence_score": 0.0,
+            "confidence": "0%", "confidence_score": 0.0,
             "retrieval_mode": "agent_error",
             "processing_time_ms": round((time.perf_counter() - t_start) * 1000, 1),
             "reflection_note": str(exc),

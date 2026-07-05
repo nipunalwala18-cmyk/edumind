@@ -38,7 +38,6 @@ from typing import Optional, TYPE_CHECKING
 
 from rag.prompt_schema import (
     BuiltPrompt,
-    ConfidenceLabel,
     ContextChunk,
     ConflictGroup,
     PromptConfig,
@@ -78,9 +77,8 @@ from the most recent version. Always note the version you are citing.
 explicitly state the conflict, name the sources involved, and indicate which is the more recent authority.
 
 5. CONFIDENCE: End your answer with a confidence indicator in this exact format:
-   [Confidence: High] — the context directly and completely answers the question
-   [Confidence: Medium] — the context partially answers the question or requires inference
-   [Confidence: Low] — the context is only tangentially related to the question
+   [Confidence: <percentage>%] — <reason>
+   e.g. [Confidence: 85%] — the context directly and completely answers the question
 
 6. CITATIONS: Use [SOURCE N] inline in your answer wherever you reference a specific source. \
 Do not invent, guess, alter, or embellish any source details.
@@ -99,7 +97,7 @@ Rules:
 2. If unavailable: "I could not find this information in the institutional knowledge base."
 3. Prefer the latest document version when versions conflict.
 4. State any SOP conflicts explicitly.
-5. End with [Confidence: High / Medium / Low].
+5. End with [Confidence: <percentage>%].
 6. Cite inline using [SOURCE N]. Never fabricate citations.
 7. No fabrication of any kind.\
 """,
@@ -113,7 +111,7 @@ ANSWER RULES:
 3. If the answer is not present: "I could not find this information in the institutional knowledge base."
 4. Prefer the highest-version source for any given document.
 5. Explicitly name conflicting sources when they disagree.
-6. End your answer with [Confidence: High / Medium / Low].
+6. End your answer with [Confidence: <percentage>%].
 7. NEVER fabricate, infer, or extend beyond what is written in the source text.
 
 Citation rule: if you cannot point to a specific [SOURCE N] for a claim, do not make the claim.\

@@ -144,6 +144,19 @@ def on_startup():
     except Exception as exc:
         logging.error(f"[STARTUP] Ingestion validation failed: {exc}")
 
+    # Pre-load retrieval models (embedder & reranker) to avoid slow first queries
+    try:
+        logging.info("[STARTUP] Pre-loading retrieval models (embedder, reranker, BM25)...")
+        from retrieval.retriever import get_retriever
+        from embeddings.embedder import get_embedder
+        from retrieval.reranker import get_reranker
+        get_embedder()
+        get_reranker()
+        get_retriever()
+        logging.info("[STARTUP] Retrieval models pre-loaded.")
+    except Exception as exc:
+        logging.error(f"[STARTUP] Failed to pre-load retrieval models: {exc}")
+
 
 
 # ── Serve frontend ─────────────────────────────────────────────────────────────
