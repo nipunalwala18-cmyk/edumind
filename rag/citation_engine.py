@@ -104,6 +104,12 @@ class CitationEngine:
         # 5. Assign 1-based ranks and inline refs
         citations = self._assign_ranks(raw_citations)
 
+        # Log each generated citation
+        for c in citations:
+            logger.info(
+                f"[CITATION] [GEN] citation_id={c.citation_id} doc_id={c.doc_id} filepath={c.filepath}"
+            )
+
         # 6. Build source_number → rank map for inline ref injection
         source_map = self._build_source_map(results, citations)
 
@@ -214,6 +220,8 @@ class CitationEngine:
         eff_score    = best.rerank_score if best.rerank_score is not None else best.score
         access_level = best.metadata.get("access_level", "Public")
         chunk_index  = earliest.citation.chunk_index
+        
+        filepath = best.metadata.get("source_file") or best.metadata.get("filepath") or ""
 
         return Citation(
             citation_id      = f"cite_{doc_id[:12]}",
@@ -221,17 +229,21 @@ class CitationEngine:
             inline_ref       = "",  # assigned later
             doc_id           = doc_id,
             display_name     = cit.display_name,
+            title            = best.metadata.get("title") or cit.display_name,
             department       = cit.department,
             category         = cit.category,
             version          = cit.version,
             source_file      = cit.source_file,
+            filepath         = filepath,
             section_heading  = best.citation.section_heading,
             chunk_ids        = [r.chunk_id for r in results],
+            chunk_id         = best.chunk_id,
             chunk_index      = chunk_index,
             total_chunks     = cit.total_chunks,
             page_number      = chunk_index + 1 if chunk_index >= 0 else 0,
             score            = eff_score,
             rerank_score     = best.rerank_score,
+            retrieval_score  = best.score,
             access_level     = access_level,
             is_latest_version = True,  # resolved later
         )
@@ -258,17 +270,21 @@ class CitationEngine:
             inline_ref       = "",
             doc_id           = doc_id,
             display_name     = _extract_display_name(best.display_citation),
+            title            = _extract_display_name(best.display_citation),
             department       = best.department,
             category         = best.category,
             version          = best.version,
             source_file      = "",
+            filepath         = "",
             section_heading  = best.section_heading,
             chunk_ids        = [c.chunk_id for c in chunks],
+            chunk_id         = best.chunk_id,
             chunk_index      = chunk_index,
             total_chunks     = 0,
             page_number      = chunk_index + 1,
             score            = eff_score,
             rerank_score     = best.rerank_score,
+            retrieval_score  = best.score,
             access_level     = "Public",
             is_latest_version = True,
         )

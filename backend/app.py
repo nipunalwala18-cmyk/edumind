@@ -92,6 +92,59 @@ def on_startup():
     finally:
         db.close()
 
+    # Phase 3: Startup Validation Report
+    try:
+        import ledger
+        from vector_store.chroma_store import get_chroma_store
+        
+        ledger.initialize_db()
+        docs = ledger.get_all_documents()
+        total_docs = len(docs)
+        existing_files = 0
+        missing_files = 0
+        
+        for d in docs:
+            fp = d.get("source_file") or d.get("filepath")
+            if fp:
+                full_path = Path(__file__).parent.parent / fp
+                if full_path.is_file():
+                    existing_files += 1
+                else:
+                    missing_files += 1
+            else:
+                missing_files += 1
+                
+        store = get_chroma_store()
+        chroma_count = store._collection.count() if store._collection else 0
+        ledger_chunk_count = ledger.get_chunk_count()
+        
+        orphaned_count = 0
+        if store._collection and chroma_count > 0:
+            chroma_data = store._collection.get(include=[])
+            chroma_ids = set(chroma_data.get("ids") or [])
+            
+            conn = ledger.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT chunk_id FROM chunks")
+            ledger_ids = {row[0] for row in cur.fetchall()}
+            conn.close()
+            
+            orphaned_ids = chroma_ids - ledger_ids
+            orphaned_count = len(orphaned_ids)
+            
+        logging.info(
+            f"[STARTUP] [VALIDATION] Ingestion Integrity Report:\n"
+            f"  - Total Documents in Ledger: {total_docs}\n"
+            f"  - Existing Physical Files:   {existing_files}\n"
+            f"  - Missing Physical Files:    {missing_files}\n"
+            f"  - Chunks in SQLite Ledger:   {ledger_chunk_count}\n"
+            f"  - Vectors in ChromaDB:       {chroma_count}\n"
+            f"  - Orphaned Chroma Vectors:   {orphaned_count}"
+        )
+    except Exception as exc:
+        logging.error(f"[STARTUP] Ingestion validation failed: {exc}")
+
+
 
 # ── Serve frontend ─────────────────────────────────────────────────────────────
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
@@ -555,23 +608,114 @@ def document_view(
 
 
 @app.get("/api/documents/{doc_id}/file")
+@app.get("/documents/{doc_id}/file")
 def document_file(doc_id: str, current_user: User = Depends(get_current_user)):
     """
-    Streams the original document bytes (RBAC-enforced). Streams from disk in
-    blocks — the filesystem path is never exposed to the client.
+    Streams the original document bytes (RBAC-enforced) for inline display.
     """
+    from fastapi.responses import JSONResponse
     from backend import document_service as ds
     docref = _authorize_document(doc_id, current_user)
+    
+    if docref.path is None or not docref.path.is_file():
+        logger.warning(
+            "[DOCVIEW] file not available inline doc_id=%s path=%s by=%s(%s)",
+            doc_id[:12], docref.path, current_user.username, current_user.role
+        )
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "missing",
+                "doc_id": doc_id,
+                "filepath": str(docref.path) if docref.path else "",
+                "message": "Original source document is not available."
+            }
+        )
+
     filename = docref.path.name
     logger.info(
-        "[DOCVIEW] file doc_id=%s by=%s(%s)",
-        doc_id[:12], current_user.username, current_user.role,
+        "[DOCVIEW] file doc_id=%s resolved=%s by=%s(%s)",
+        doc_id[:12], docref.path, current_user.username, current_user.role,
     )
     return StreamingResponse(
         ds.iter_file_bytes(docref.path),
         media_type=ds.media_type_for(docref.path),
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+@app.get("/api/documents/{doc_id}")
+@app.get("/documents/{doc_id}")
+def get_document_details(doc_id: str, current_user: User = Depends(get_current_user)):
+    """Retrieves document metadata. RBAC-enforced."""
+    docref = _authorize_document(doc_id, current_user)
+    logger.info("[DOCMETA] details doc_id=%s by=%s(%s)", doc_id[:12], current_user.username, current_user.role)
+    return {
+        "doc_id":       docref.doc_id,
+        "title":        docref.title,
+        "department":   docref.department,
+        "version":      docref.version,
+        "category":     docref.category,
+        "access_level": docref.access_level,
+        "kind":         docref.kind,
+        "filepath":     str(docref.path) if docref.path else "",
+        "exists":       docref.path is not None and docref.path.is_file()
+    }
+
+
+@app.get("/api/documents/{doc_id}/download")
+@app.get("/documents/{doc_id}/download")
+def document_download(doc_id: str, current_user: User = Depends(get_current_user)):
+    """Downloads the original document if it exists, otherwise returns a missing error JSON."""
+    from fastapi.responses import JSONResponse
+    from backend import document_service as ds
+    docref = _authorize_document(doc_id, current_user)
+    
+    if docref.path is None or not docref.path.is_file():
+        logger.warning(
+            "[DOWNLOAD] file not available doc_id=%s path=%s by=%s(%s)",
+            doc_id[:12], docref.path, current_user.username, current_user.role
+        )
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "missing",
+                "doc_id": doc_id,
+                "filepath": str(docref.path) if docref.path else "",
+                "message": "Original source document is not available."
+            }
+        )
+        
+    filename = docref.path.name
+    logger.info(
+        "[DOWNLOAD] file doc_id=%s resolved=%s by=%s(%s)",
+        doc_id[:12], docref.path, current_user.username, current_user.role,
+    )
+    return StreamingResponse(
+        ds.iter_file_bytes(docref.path),
+        media_type=ds.media_type_for(docref.path),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/chunks/{chunk_id}")
+@app.get("/chunks/{chunk_id}")
+def get_chunk_details(chunk_id: str, current_user: User = Depends(get_current_user)):
+    """Retrieves specific chunk details from the ledger. RBAC-enforced."""
+    from backend import document_service as ds
+    if not ds.role_can_open(current_user.role):
+        raise HTTPException(status_code=403, detail="Public users cannot access chunk details.")
+        
+    chunk = ds.get_chunk_by_id(chunk_id)
+    if not chunk:
+        raise HTTPException(status_code=404, detail="Chunk not found.")
+        
+    if not ds.can_access(current_user.role, chunk.get("access_level", "Public")):
+        raise HTTPException(status_code=403, detail="Your role cannot access this chunk.")
+        
+    logger.info("[CHUNK] details chunk_id=%s by=%s(%s)", chunk_id[:12], current_user.username, current_user.role)
+    return chunk
+
 
 
 # ── Admin Dashboard APIs ───────────────────────────────────────────────────────

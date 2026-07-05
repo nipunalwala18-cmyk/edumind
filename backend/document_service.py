@@ -93,7 +93,7 @@ def can_access(role: Optional[str], access_level: Optional[str]) -> bool:
 @dataclass
 class DocumentRef:
     doc_id:       str
-    path:         Path
+    path:         Optional[Path] # Optional so we can hold reference even if file is missing
     title:        str
     department:   str
     version:      str
@@ -119,8 +119,28 @@ def _safe_path(source_file: Optional[str]) -> Optional[Path]:
     return candidate if candidate.is_file() else None
 
 
-def _detect_kind(path: Path) -> str:
+def _safe_path_lenient(source_file: Optional[str]) -> Optional[Path]:
+    """
+    Resolves a ledger `source_file` to an absolute path and verifies it is
+    inside the data/ root. Returns resolved path even if file is missing on disk.
+    """
+    if not source_file:
+        return None
+    rel = str(source_file).replace("\\", "/")
+    candidate = (Path(_PROJECT_ROOT) / rel).resolve()
+    try:
+        candidate.relative_to(_DATA_ROOT)
+    except ValueError:
+        logger.warning("[DOCVIEW] rejected out-of-root path: %s", source_file)
+        return None
+    return candidate
+
+
+def _detect_kind(path: Optional[Path], filename_fallback: str = "") -> str:
     """Detect file type by magic bytes, falling back to the extension."""
+    if not path or not path.is_file():
+        ext = os.path.splitext(filename_fallback or (path.name if path else ""))[1].lower().replace(".", "")
+        return ext if ext in ("pdf", "docx", "doc") else "unknown"
     try:
         with open(path, "rb") as f:
             head = f.read(8)
@@ -138,8 +158,9 @@ def _detect_kind(path: Path) -> str:
 
 def load_document(doc_id: str) -> Optional[DocumentRef]:
     """
-    Looks up a document by doc_id in the ledger and returns a DocumentRef with a
-    validated physical path. Returns None if unknown or the file is missing.
+    Looks up a document by doc_id in the ledger and returns a DocumentRef.
+    Returns None if unknown, but does NOT return None if the file is missing from disk
+    (sets path and kind appropriately so metadata can still be viewed).
     """
     if not doc_id:
         return None
@@ -153,9 +174,10 @@ def load_document(doc_id: str) -> Optional[DocumentRef]:
     if not rec:
         return None
 
-    path = _safe_path(rec.get("source_file") or rec.get("filepath"))
+    source_file = rec.get("source_file") or rec.get("filepath") or ""
+    path = _safe_path_lenient(source_file)
     if path is None:
-        logger.warning("[DOCVIEW] no servable file for doc_id=%s", doc_id)
+        logger.warning("[DOCVIEW] path traversal or invalid path for doc_id=%s", doc_id)
         return None
 
     return DocumentRef(
@@ -166,8 +188,9 @@ def load_document(doc_id: str) -> Optional[DocumentRef]:
         version=rec.get("version") or "1.0",
         category=rec.get("category") or "SOP",
         access_level=rec.get("access_level") or "Public",
-        kind=_detect_kind(path),
+        kind=_detect_kind(path, source_file),
     )
+
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +378,50 @@ def render_viewer_html(docref: DocumentRef, chunk_index: Optional[int]) -> str:
     """
     chunk_text = get_chunk_text(docref.doc_id, chunk_index)
 
+    # --- Fallback: File is missing from disk ---
+    if docref.path is None or not docref.path.is_file():
+        try:
+            import ledger
+            all_chunks = ledger.get_chunks_by_doc_id(docref.doc_id)
+        except Exception:
+            all_chunks = []
+        
+        adjacent_html = ""
+        current_chunk_idx = chunk_index if chunk_index is not None else 0
+        
+        if all_chunks:
+            adjacent_html += "<div style='margin-top: 1.5rem;'><h4 style='color: var(--text2); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;'>Document Chunk Navigation (Original File Unavailable)</h4>"
+            adjacent_html += "<div style='display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem;'>"
+            for c in all_chunks:
+                c_idx = c.get("chunk_index", 0)
+                active_style = "background: var(--mark); color: #0a0a0b; font-weight: 600;" if c_idx == current_chunk_idx else "background: var(--surface2); color: var(--text2);"
+                adjacent_html += f"<a href='?chunk_index={c_idx}' style='text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; {active_style}'>Chunk {c_idx + 1}</a>"
+            adjacent_html += "</div>"
+            
+            active_chunk = None
+            for c in all_chunks:
+                if c.get("chunk_index") == current_chunk_idx:
+                    active_chunk = c
+                    break
+            if not active_chunk and all_chunks:
+                active_chunk = all_chunks[0]
+                
+            if active_chunk:
+                content = active_chunk.get("content", "")
+                section = active_chunk.get("section_heading", "")
+                sect_info = f"<div style='font-size: 0.85rem; color: var(--text3); margin-bottom: 0.5rem;'>Section: {html.escape(section)}</div>" if section else ""
+                adjacent_html += f"<div class='chunk-box' style='font-family: inherit; font-size: 0.93rem;'>{sect_info}{html.escape(content)}</div>"
+            adjacent_html += "</div>"
+        else:
+            adjacent_html += _chunk_fallback(chunk_text, "Original source document is not available.")
+            
+        return _page(
+            docref,
+            chunk_index,
+            f"<div class='notice' style='border-left: 3px solid #ef4444;'>Original document file is unavailable on disk. Displaying retrieved chunk evidence.</div>{adjacent_html}",
+            flag="Chunk Fallback View (File Unavailable)"
+        )
+
     # --- DOCX: native paragraph extraction + inline highlight (primary path) ---
     if docref.kind == "docx":
         try:
@@ -404,3 +471,19 @@ def render_viewer_html(docref: DocumentRef, chunk_index: Optional[int]) -> str:
 def _chunk_fallback(chunk_text: str, message: str) -> str:
     safe = html.escape(chunk_text or "(passage unavailable)")
     return f"<div class='notice'>{html.escape(message)}</div><div class='chunk-box'>{safe}</div>"
+
+
+def get_chunk_by_id(chunk_id: str) -> Optional[dict]:
+    """Retrieves a chunk's content and metadata by its chunk_id from the ledger."""
+    try:
+        import ledger
+        conn = ledger.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM chunks WHERE chunk_id = ?", (chunk_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+    except Exception as exc:
+        logger.error("[DOCVIEW] chunk lookup failed for chunk_id=%s: %s", chunk_id, exc)
+        return None
+

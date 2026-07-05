@@ -637,10 +637,22 @@ function closeDoc() { const m = $('docModal'); if (m) m.remove(); }
 async function downloadDoc(docId) {
   if (!S.token || !docId) return;
   try {
-    const r = await fetch(`${API}/api/documents/${docId}/file`, {
+    const r = await fetch(`${API}/api/documents/${docId}/download`, {
       headers: { 'Authorization': `Bearer ${S.token}` },
     });
-    if (!r.ok) return;
+    if (!r.ok) {
+      if (r.status === 404) {
+        try {
+          const errData = await r.json();
+          if (errData.status === 'missing') {
+            alert(errData.message || 'Original source document is not available.');
+            return;
+          }
+        } catch {}
+      }
+      alert('Could not download original document (error ' + r.status + ').');
+      return;
+    }
     const blob = await r.blob();
     const cd = r.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="?([^"]+)"?/);
@@ -649,7 +661,9 @@ async function downloadDoc(docId) {
     const a = document.createElement('a'); a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-  } catch {}
+  } catch {
+    alert('Cannot reach the server to download the document.');
+  }
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDoc(); });
