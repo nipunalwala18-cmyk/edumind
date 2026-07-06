@@ -35,13 +35,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.auth import create_access_token, get_current_user, verify_password
+from backend.auth import create_access_token, get_current_user, hash_password, verify_password
 from backend.database import ChatMessage, User, get_db, init_db
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,6 @@ def on_startup():
     )
     # Autoseed default users if table is empty
     from backend.database import SessionLocal, User
-    from backend.auth import hash_password
     db = SessionLocal()
     try:
         if db.query(User).count() == 0:
@@ -194,6 +193,11 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class SignupRequest(BaseModel):
+    username: str
+    password: str
+
+
 class ChatRequest(BaseModel):
     query: str
     session_id: Optional[str] = None
@@ -221,7 +225,51 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         "token_type":   "bearer",
         "role":         user.role,
         "username":     user.username,
+        "is_committee_head": user.is_committee_head,
+        "committee_name":    user.committee_name,
     }
+
+
+@app.post("/api/auth/signup")
+def signup(payload: SignupRequest, db: Session = Depends(get_db)):
+    """Self-service registration. New accounts always start as role=Student —
+    Faculty/Admin/Committee Head are assigned by an Admin, never self-selected."""
+    username = payload.username.strip()
+    password = payload.password
+
+    if not (3 <= len(username) <= 32) or not all(c.isalnum() or c in "_-" for c in username):
+        raise HTTPException(
+            status_code=400,
+            detail="Username must be 3-32 characters (letters, numbers, _ or -).",
+        )
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+
+    if db.query(User).filter(User.username == username).first():
+        raise HTTPException(status_code=409, detail="That username is already taken.")
+
+    user = User(username=username, hashed_password=hash_password(password), role="Student")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token({"sub": user.username, "role": user.role})
+    return {
+        "access_token": token,
+        "token_type":   "bearer",
+        "role":         user.role,
+        "username":     user.username,
+        "is_committee_head": user.is_committee_head,
+        "committee_name":    user.committee_name,
+    }
+
+
+# ── Indexing status (public — all users see when the KB is updating) ───────────
+@app.get("/api/indexing-status")
+def indexing_status():
+    """Whether a document is currently being ingested/embedded into the KB."""
+    from backend.document_manager import get_indexing_state
+    return get_indexing_state()
 
 
 # ── Public chat (no auth) ──────────────────────────────────────────────────────
@@ -501,9 +549,13 @@ def delete_conversation(
 
 
 # ── Document upload (Admin) ────────────────────────────────────────────────────
+# Plain `def` (not `async def`): ingestion is a long, CPU-bound, blocking call
+# (docx/pdf parsing, chunking, embedding, ChromaDB writes). FastAPI runs sync
+# `def` endpoints in a threadpool, so this doesn't freeze the event loop for
+# other requests (e.g. other users' chat queries or /api/indexing-status polls)
+# while a document is being indexed. An `async def` here would block everyone.
 @app.post("/api/upload")
-async def upload_document(
-    background_tasks: BackgroundTasks,
+def upload_document(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
@@ -514,12 +566,14 @@ async def upload_document(
             detail="Only Admin users can upload documents",
         )
 
-    content = await file.read()
+    content = file.file.read()
     if not content:
         raise HTTPException(status_code=400, detail="File is empty.")
 
     from backend.document_manager import ingest_uploaded_file
-    result = ingest_uploaded_file(filename=file.filename, content_bytes=content)
+    result = ingest_uploaded_file(
+        filename=file.filename, content_bytes=content, uploaded_by=current_user.username
+    )
 
     if result.status == "duplicate":
         raise HTTPException(
@@ -542,6 +596,46 @@ async def upload_document(
     }
 
 
+# ── Committee Head SOP submissions ──────────────────────────────────────────────
+def _require_committee_head(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "Student" or not current_user.is_committee_head:
+        raise HTTPException(status_code=403, detail="Committee Head access required")
+    return current_user
+
+
+@app.post("/api/committee/upload")
+def committee_upload(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    department: Optional[str] = Form(None),
+    current_user: User = Depends(_require_committee_head),
+):
+    """Committee Head: stage an SOP submission pending admin approval."""
+    content = file.file.read()
+
+    from backend.committee_manager import save_pending_upload
+    try:
+        row = save_pending_upload(
+            username=current_user.username,
+            committee_name=current_user.committee_name,
+            filename=file.filename,
+            content_bytes=content,
+            title=title,
+            department=department,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return row
+
+
+@app.get("/api/committee/my-uploads")
+def committee_my_uploads(current_user: User = Depends(_require_committee_head)):
+    """Committee Head: track approval status of own SOP submissions."""
+    from backend.committee_manager import list_uploads_for_user
+    return list_uploads_for_user(current_user.username)
+
+
 # ── Users list (Admin) ─────────────────────────────────────────────────────────
 @app.get("/api/users")
 def list_users(
@@ -551,7 +645,16 @@ def list_users(
     if current_user.role != "Admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     users = db.query(User).all()
-    return [{"username": u.username, "role": u.role} for u in users]
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "role": u.role,
+            "is_committee_head": u.is_committee_head,
+            "committee_name": u.committee_name,
+        }
+        for u in users
+    ]
 
 
 # ── Citation document viewer ────────────────────────────────────────────────────
@@ -762,12 +865,26 @@ def admin_documents(_: User = Depends(_require_admin)):
             "version":      d.get("version", ""),
             "category":     d.get("category", ""),
             "status":       d.get("status", ""),
+            "access_level": d.get("access_level", ""),
+            "uploaded_by":  d.get("uploaded_by") or "—",
             "total_chunks": d.get("total_chunks", 0),
             "upload_date":  d.get("upload_date", ""),
             "ingested_at":  d.get("ingested_at", ""),
         }
         for d in docs
     ]
+
+
+@app.delete("/api/admin/documents/{doc_id}")
+def admin_delete_document(doc_id: str, current_user: User = Depends(_require_admin)):
+    """Removes a document from the knowledge base (ledger + ChromaDB vectors)."""
+    from backend.document_manager import delete_document
+    from backend.committee_manager import mark_removed_by_doc_id
+    result = delete_document(doc_id)
+    if not result["removed"]:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    mark_removed_by_doc_id(doc_id, current_user.username)
+    return result
 
 
 @app.get("/api/admin/logs")
@@ -794,4 +911,112 @@ def admin_chroma(_: User = Depends(_require_admin)):
         "coverage_pct":  round(
             100 * stats["embedded_vectors"] / max(stats["total_chunks"], 1), 1
         ),
+    }
+
+
+# ── Committee Head approval workflow (Admin) ────────────────────────────────────
+class RejectRequest(BaseModel):
+    reason: str
+
+
+class CommitteeHeadRequest(BaseModel):
+    is_committee_head: bool
+    committee_name: Optional[str] = None
+
+
+@app.get("/api/admin/pending-approvals")
+def admin_pending_approvals(_: User = Depends(_require_admin)):
+    """List committee-head SOP submissions awaiting review."""
+    from backend.committee_manager import list_pending_approvals
+    return list_pending_approvals()
+
+
+def _resolve_pending_file(upload_id: int) -> tuple[dict, Path]:
+    from backend.committee_manager import get_upload
+    upload = get_upload(upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+    path = Path(upload["stored_path"])
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Submission file is no longer available.")
+    return upload, path
+
+
+@app.get("/api/admin/pending-approvals/{upload_id}/preview")
+def admin_preview_pending_upload(upload_id: int, _: User = Depends(_require_admin)):
+    """Renders a pending SOP submission in-browser so an admin can review it before approving."""
+    from backend.document_service import render_pending_preview_html
+    upload, path = _resolve_pending_file(upload_id)
+    html_doc = render_pending_preview_html(path, upload["original_filename"])
+    return HTMLResponse(content=html_doc)
+
+
+@app.get("/api/admin/pending-approvals/{upload_id}/file")
+def admin_download_pending_upload(upload_id: int, _: User = Depends(_require_admin)):
+    """Streams the original bytes of a pending SOP submission (download)."""
+    from backend.document_service import media_type_for
+    upload, path = _resolve_pending_file(upload_id)
+    return FileResponse(
+        path=str(path),
+        media_type=media_type_for(path),
+        filename=upload["original_filename"],
+    )
+
+
+@app.post("/api/admin/approvals/{upload_id}/approve")
+def admin_approve_upload(upload_id: int, current_user: User = Depends(_require_admin)):
+    """Approve a committee-head SOP submission — triggers ingestion + embedding."""
+    from backend.committee_manager import approve_upload
+    try:
+        result = approve_upload(upload_id, current_user.username)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result["upload"]
+
+
+@app.post("/api/admin/approvals/{upload_id}/reject")
+def admin_reject_upload(
+    upload_id: int,
+    payload: RejectRequest,
+    current_user: User = Depends(_require_admin),
+):
+    """Reject a committee-head SOP submission with a reason."""
+    if not payload.reason.strip():
+        raise HTTPException(status_code=400, detail="Rejection reason is required.")
+
+    from backend.committee_manager import reject_upload
+    try:
+        return reject_upload(upload_id, current_user.username, payload.reason.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.patch("/api/admin/users/{user_id}/committee-head")
+def admin_set_committee_head(
+    user_id: int,
+    payload: CommitteeHeadRequest,
+    _: User = Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """Designate or revoke a Student user's Committee Head status."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.role != "Student":
+        raise HTTPException(status_code=400, detail="Committee Head status only applies to Student users.")
+
+    target.is_committee_head = payload.is_committee_head
+    target.committee_name = payload.committee_name if payload.is_committee_head else None
+    db.commit()
+    db.refresh(target)
+
+    return {
+        "id": target.id,
+        "username": target.username,
+        "role": target.role,
+        "is_committee_head": target.is_committee_head,
+        "committee_name": target.committee_name,
     }

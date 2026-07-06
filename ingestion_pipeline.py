@@ -388,6 +388,30 @@ def _extract_text_from_document(doc: docx.Document) -> tuple[list[str], str]:
     return paragraph_texts, full_text
 
 
+def _extract_text_from_pdf(filepath: str) -> tuple[list[str], str]:
+    """
+    Extracts text from a PDF using pypdf, mirroring the return contract of
+    _extract_text_from_document so downstream metadata extraction and chunking
+    are format-agnostic.
+
+    Returns:
+        (paragraph_texts, serialized_full_text)
+    """
+    from pypdf import PdfReader
+
+    reader = PdfReader(filepath)
+    paragraph_texts: list[str] = []
+    for page in reader.pages:
+        page_text = page.extract_text() or ""
+        for line in page_text.split("\n"):
+            line = line.strip()
+            if line:
+                paragraph_texts.append(line)
+
+    full_text = "\n\n".join(paragraph_texts)
+    return paragraph_texts, full_text
+
+
 # ===========================================================================
 # SECTION 4: Text Cleaning
 # ===========================================================================
@@ -511,18 +535,15 @@ def ingest_document(filepath: str, summary: IngestionSummary) -> Optional[tuple[
 
     logger.info(f"[INGESTION] Processing: {filename}")
 
-    try:
-        doc = docx.Document(filepath)
-    except Exception as e:
-        logger.error(f"[INGESTION] Cannot open '{filename}': {e}")
-        summary.total_docs_failed += 1
-        summary.errors.append(f"Cannot open: {filename}: {e}")
-        ledger.log_event(rel_path, "ingest_open", "failed", str(e))
-        return None
+    ext = os.path.splitext(filename)[1].lower()
 
-    # --- Text Extraction ---
+    # --- Open + Text Extraction (format-aware) ---
     try:
-        paragraph_texts, raw_text = _extract_text_from_document(doc)
+        if ext == ".pdf":
+            paragraph_texts, raw_text = _extract_text_from_pdf(filepath)
+        else:
+            doc = docx.Document(filepath)
+            paragraph_texts, raw_text = _extract_text_from_document(doc)
         cleaned_text = clean_text(raw_text)
     except Exception as e:
         logger.error(f"[INGESTION] Extraction failed for '{filename}': {e}")

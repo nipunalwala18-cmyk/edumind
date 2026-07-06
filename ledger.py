@@ -12,6 +12,7 @@ _PHASE2_DOCUMENT_COLUMNS = {
     "upload_date": "TEXT",
     "total_chunks": "INTEGER DEFAULT 0",
     "ingested_at": "TEXT",
+    "uploaded_by": "TEXT",
 }
 
 
@@ -269,6 +270,36 @@ def upsert_document(record: dict) -> None:
     except Exception as e:
         conn.rollback()
         raise e
+    finally:
+        conn.close()
+
+
+def set_document_uploader(doc_id: str, username: str) -> None:
+    """Records which user contributed a document (admin uploader or approved
+    committee head). Used by the admin document registry."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE documents SET uploaded_by = ? WHERE doc_id = ?", (username, doc_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_document(doc_id: str) -> bool:
+    """Removes a document and all its chunks from the ledger. Returns True if a
+    document row was deleted. ChromaDB vectors must be removed separately by the
+    caller (vector_store.delete_by_doc_id)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM chunks WHERE doc_id = ?", (doc_id,))
+        cursor.execute("DELETE FROM documents WHERE doc_id = ?", (doc_id,))
+        deleted = cursor.rowcount > 0
+        conn.commit()
+        return deleted
     finally:
         conn.close()
 

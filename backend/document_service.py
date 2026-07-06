@@ -20,6 +20,7 @@ Public API:
     get_chunk_text(doc_id, chunk_index)          -> str
     iter_file_bytes(path)                         -> Iterator[bytes]
     render_viewer_html(docref, chunk_index)      -> str
+    render_pending_preview_html(path, filename)  -> str
     media_type_for(path)                          -> str
 """
 
@@ -587,6 +588,47 @@ def render_viewer_html(docref: DocumentRef, chunk_index: Optional[int]) -> str:
 def _chunk_fallback(chunk_text: str, message: str) -> str:
     safe = html.escape(chunk_text or "(passage unavailable)")
     return f"<div class='notice'>{html.escape(message)}</div><div class='chunk-box'>{safe}</div>"
+
+
+def render_pending_preview_html(path: Path, filename: str) -> str:
+    """
+    Renders a not-yet-ingested (pending committee-head) submission for admin
+    review, reusing the same docx/pdf renderers as the citation viewer but
+    without a DocumentRef/chunk (nothing has been chunked or approved yet).
+    """
+    kind = _detect_kind(path, filename)
+    title = html.escape(filename)
+
+    if kind == "docx":
+        try:
+            body, _ = render_docx_to_html(path, "")
+        except Exception as exc:
+            logger.error("[DOCVIEW] pending docx render failed: %s", exc, exc_info=True)
+            body = "<div class='notice'>Could not render this document.</div>"
+    elif kind == "pdf":
+        paras = _extract_pdf_paragraphs(path)
+        if paras:
+            body = "".join(f"<p class='para'>{html.escape(p)}</p>" for p in paras)
+        else:
+            size = path.stat().st_size
+            if size <= _PDF_INLINE_CAP:
+                b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+                body = f"<embed type='application/pdf' src='data:application/pdf;base64,{b64}'>"
+            else:
+                body = "<div class='notice'>This PDF is too large to preview inline. Download it to review.</div>"
+    else:
+        body = "<div class='notice'>This file type has no in-browser preview. Download it to review.</div>"
+
+    return (
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        f"<title>{title}</title><style>{_VIEWER_CSS}</style></head><body>"
+        "<div class='doc-head'>"
+        f"<div class='doc-title'>{title}</div>"
+        "<div class='doc-flag'>Pending review — not yet in the knowledge base</div>"
+        "</div>"
+        f"<div class='doc-body'>{body}</div></body></html>"
+    )
 
 
 def get_chunk_by_id(chunk_id: str) -> Optional[dict]:
