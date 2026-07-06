@@ -309,6 +309,15 @@ body::before {
 .ring-wrap .ring-meta .big { font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; }
 .ring-wrap .ring-meta .small { font-size: 0.82rem; color: var(--text-3); }
 
+/* welcome hero (dashboard intro) */
+.welcome-hero { display: flex; align-items: center; gap: 1rem; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 1.4rem 1.6rem; margin-bottom: 1.8rem; }
+.welcome-hero .ic-box { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  background: var(--accent-dim); border: 1px solid rgba(255,255,255,0.25); color: var(--accent); flex-shrink: 0; }
+.welcome-hero .ic-box svg { width: 22px; height: 22px; }
+.welcome-hero .wh-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 0.25rem; }
+.welcome-hero .wh-sub { font-size: 0.88rem; color: var(--text-3); }
+
 /* section header */
 .sec-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
 .sec-head h3 { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; }
