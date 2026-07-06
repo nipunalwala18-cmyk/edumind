@@ -18,6 +18,10 @@ class User(Base):
     role = Column(String, nullable=False)  # 'Public','Student','Faculty','Admin'
     is_committee_head = Column(Boolean, nullable=False, default=False)
     committee_name = Column(String, nullable=True)
+    department = Column(String, nullable=True)
+    approval_status = Column(String, nullable=False, default="approved")  # 'pending'|'approved'|'rejected'
+    rejection_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class CommitteeUpload(Base):
@@ -72,6 +76,10 @@ def migrate_user_columns():
         cursor = conn.cursor()
         _ensure_column(cursor, "users", "is_committee_head", "BOOLEAN NOT NULL DEFAULT 0")
         _ensure_column(cursor, "users", "committee_name", "TEXT")
+        _ensure_column(cursor, "users", "department", "TEXT")
+        _ensure_column(cursor, "users", "approval_status", "TEXT NOT NULL DEFAULT 'approved'")
+        _ensure_column(cursor, "users", "rejection_reason", "TEXT")
+        _ensure_column(cursor, "users", "created_at", "TIMESTAMP")
         conn.commit()
     finally:
         conn.close()

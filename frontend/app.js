@@ -25,6 +25,33 @@ const S = {
   isCommitteeHead: false, committeeName: null,
 };
 
+const SESSION_KEY = 'EDUMIND_SESSION';
+
+function saveSession() {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({
+    token: S.token, user: S.user, role: S.role,
+    isCommitteeHead: S.isCommitteeHead, committeeName: S.committeeName,
+  }));
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function restoreSession() {
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) return false;
+  try {
+    const saved = JSON.parse(raw);
+    if (!saved.token) return false;
+    Object.assign(S, saved, { isPublic: false });
+    return true;
+  } catch {
+    clearSession();
+    return false;
+  }
+}
+
 /* ── SVG icon set (stroke = currentColor) ──────────────────────────── */
 const I = {
   logo: '<svg class="mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v6l9 4 9-4V7"/><path d="M7 9v5"/></svg>',
@@ -121,6 +148,17 @@ function renderLanding() {
 }
 
 let authMode = 'login'; // 'login' | 'signup'
+let signupRole = 'Student'; // 'Student' | 'Faculty'
+let DEPARTMENTS = [];
+
+async function loadDepartments() {
+  if (DEPARTMENTS.length) return DEPARTMENTS;
+  try {
+    const r = await fetch(`${API}/api/auth/departments`);
+    if (r.ok) DEPARTMENTS = (await r.json()).departments || [];
+  } catch {}
+  return DEPARTMENTS;
+}
 
 function authModalHTML() {
   const isSignup = authMode === 'signup';
@@ -130,10 +168,23 @@ function authModalHTML() {
     <h2>${isSignup ? 'Create your account' : 'Welcome back'}</h2>
     <p class="sub">${isSignup ? 'Sign up to unlock your personalised workspace.' : 'Sign in to unlock your personalised workspace.'}</p>
     <div class="modal-err" id="loginErr"></div>
+    <div class="modal-msg" id="loginMsg" style="display:none"></div>
     <form onsubmit="handleAuthSubmit(event)">
+      ${isSignup ? `
+      <div class="field">
+        <label>I am a</label>
+        <div class="role-toggle">
+          <button type="button" class="${signupRole === 'Student' ? 'active' : ''}" onclick="setSignupRole('Student')">${I.grade} Student</button>
+          <button type="button" class="${signupRole === 'Faculty' ? 'active' : ''}" onclick="setSignupRole('Faculty')">${I.flask} Faculty</button>
+        </div>
+      </div>` : ''}
       <div class="field"><label>Username</label><input id="u" placeholder="e.g. student_test" autocomplete="off" required></div>
       <div class="field"><label>Password</label><input id="p" type="password" placeholder="••••••••" autocomplete="off" required></div>
       ${isSignup ? `<div class="field"><label>Confirm password</label><input id="p2" type="password" placeholder="••••••••" autocomplete="off" required></div>` : ''}
+      ${isSignup ? `<div class="field"><label>Department</label><select id="dept" required>
+        <option value="" disabled selected>Select department…</option>
+        ${DEPARTMENTS.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('')}
+      </select></div>` : ''}
       <div class="field"><label>API Endpoint</label><input id="apiUrl" placeholder="http://localhost:8000" value="${API || ''}" autocomplete="off" onchange="setApiUrl(this.value)"></div>
       <button type="submit" class="modal-submit">${isSignup ? 'Create account' : 'Continue'}</button>
     </form>
@@ -149,8 +200,14 @@ function authModalHTML() {
     </div>`}`;
 }
 
-function switchAuthMode(mode) {
+function setSignupRole(role) {
+  signupRole = role;
+  $('authCard').innerHTML = authModalHTML();
+}
+
+async function switchAuthMode(mode) {
   authMode = mode;
+  if (mode === 'signup') await loadDepartments();
   $('authCard').innerHTML = authModalHTML();
 }
 
@@ -180,6 +237,7 @@ async function _authRequest(endpointPath, body) {
       const d = await r.json();
       S.token = d.access_token; S.user = d.username; S.role = d.role; S.isPublic = false;
       S.isCommitteeHead = !!d.is_committee_head; S.committeeName = d.committee_name || null;
+      saveSession();
       await loadHistory();
       renderApp();
     } else {
@@ -196,13 +254,36 @@ async function doLogin(e) {
 
 async function doSignup(e) {
   e.preventDefault();
-  const err = $('loginErr');
+  const err = $('loginErr'); const msg = $('loginMsg');
+  err.classList.remove('show'); msg.style.display = 'none';
   const password = $('p').value, confirm = $('p2').value;
   if (password !== confirm) {
     err.textContent = 'Passwords do not match.'; err.classList.add('show');
     return;
   }
-  await _authRequest('/api/auth/signup', { username: $('u').value, password });
+  const department = $('dept').value;
+  if (!department) {
+    err.textContent = 'Please select a department.'; err.classList.add('show');
+    return;
+  }
+  const endpoint = $('apiUrl').value.trim();
+  setApiUrl(endpoint);
+  try {
+    const r = await fetch(`${API}/api/auth/signup`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: $('u').value, password, role: signupRole, department }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      const successMsg = d.message || 'Your account has been submitted and is awaiting admin approval.';
+      await switchAuthMode('login');
+      const newMsg = $('loginMsg');
+      newMsg.textContent = successMsg;
+      newMsg.style.display = 'block';
+    } else {
+      err.textContent = d.detail || 'Something went wrong.'; err.classList.add('show');
+    }
+  } catch { err.textContent = 'Cannot reach server. Is the backend running?'; err.classList.add('show'); }
 }
 
 function enterGuest() {
@@ -318,7 +399,7 @@ function go(view) {
   else if (view === 'documents') { scroll.innerHTML = `<div class="view">${documentsHTML()}</div>`; loadDocuments(); }
   else if (view === 'users') { scroll.innerHTML = `<div class="view">${usersHTML()}</div>`; }
   else if (view === 'my-sops') { scroll.innerHTML = `<div class="view">${mySopsHTML()}</div>`; loadMyUploads(); }
-  else if (view === 'approvals') { scroll.innerHTML = `<div class="view">${approvalsHTML()}</div>`; loadPendingApprovals(); }
+  else if (view === 'approvals') { scroll.innerHTML = `<div class="view">${approvalsHTML()}</div>`; loadPendingSignups(); loadPendingApprovals(); }
   else { scroll.innerHTML = `<div class="view">${dashboardHTML(view)}</div>`; }
 }
 
@@ -638,8 +719,49 @@ async function loadMyUploads() {
 /* ═══════════════════════════════════════════════════════════════════ ADMIN: APPROVALS */
 function approvalsHTML() {
   return `
-  <div class="sec-head"><h3>Pending SOP approvals</h3></div>
+  <div class="sec-head"><h3>Pending signups</h3></div>
+  <div id="signupsList"><p style="color:var(--text-3);font-size:.88rem">Loading…</p></div>
+  <div class="sec-head" style="margin-top:2rem"><h3>Pending SOP approvals</h3></div>
   <div id="approvalsList"><p style="color:var(--text-3);font-size:.88rem">Loading…</p></div>`;
+}
+
+async function loadPendingSignups() {
+  const el = $('signupsList'); if (!el) return;
+  let rows = [];
+  try {
+    const r = await fetch(`${API}/api/admin/pending-signups`, { headers: { 'Authorization': `Bearer ${S.token}` } });
+    if (r.ok) rows = await r.json();
+  } catch {}
+  if (!rows.length) { el.innerHTML = `<p style="color:var(--text-3);font-size:.88rem">Nothing pending review.</p>`; return; }
+  el.innerHTML = rows.map(u => `
+    <div class="uprow">
+      <div class="l"><span class="ic">${u.role === 'Faculty' ? I.flask : I.grade}</span><div><div class="nm">${esc(u.username)}</div><div class="sz">${esc(u.role)} · ${esc(u.department || '—')} · ${new Date(u.created_at).toLocaleString()}</div></div></div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-accent" style="padding:.3rem .7rem;font-size:.82rem" onclick="approveSignup(${u.id})">Approve</button>
+        <button class="btn btn-ghost" style="padding:.3rem .7rem;font-size:.82rem" onclick="rejectSignup(${u.id})">Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+async function approveSignup(id) {
+  try {
+    const r = await fetch(`${API}/api/admin/signups/${id}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${S.token}` } });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || 'Approval failed.'); }
+  } catch { alert('Cannot reach the server.'); }
+  loadPendingSignups();
+}
+
+async function rejectSignup(id) {
+  const reason = prompt('Reason for rejection:');
+  if (!reason || !reason.trim()) return;
+  try {
+    await fetch(`${API}/api/admin/signups/${id}/reject`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${S.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+  } catch {}
+  loadPendingSignups();
 }
 
 async function loadPendingApprovals() {
@@ -765,8 +887,8 @@ async function loadUsers() {
   scroll.innerHTML = `<div class="view">
     <div class="sec-head"><h3>User directory</h3><span class="chip">${rows.length} accounts</span></div>
     <div class="utable">
-      <div class="hr"><div>User</div><div>Role</div><div>Status</div><div>Committee Head</div></div>
-      ${rows.map(u => `<div class="rw"><div class="who"><span class="av">${initials(u.username)}</span>${esc(u.username)}</div><div><span class="role-pill">${u.role}</span></div><div><span class="dotok">Active</span></div><div>${committeeHeadCell(u)}</div></div>`).join('')}
+      <div class="hr"><div>User</div><div>Role</div><div>Department</div><div>Status</div><div>Committee Head</div></div>
+      ${rows.map(u => `<div class="rw"><div class="who"><span class="av">${initials(u.username)}</span>${esc(u.username)}</div><div><span class="role-pill">${u.role}</span></div><div>${esc(u.department || '—')}</div><div>${statusTag(u.approval_status || 'approved', u.rejection_reason)}</div><div>${committeeHeadCell(u)}</div></div>`).join('')}
     </div>
   </div>`;
 }
@@ -943,6 +1065,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDoc(); 
 function logout() {
   closeDoc();
   Object.assign(S, { user: null, role: null, token: null, isPublic: false, sessionId: null, view: 'home', messages: [], history: [], busy: false, isCommitteeHead: false, committeeName: null });
+  clearSession();
   renderLanding();
 }
 
@@ -954,7 +1077,7 @@ function logout() {
    function referenced by an inline handler MUST appear here. */
 Object.assign(window, {
   // auth / landing
-  openLogin, closeLogin, enterGuest, fill, doLogin, doSignup, handleAuthSubmit, switchAuthMode, logout, setApiUrl,
+  openLogin, closeLogin, enterGuest, fill, doLogin, doSignup, handleAuthSubmit, switchAuthMode, setSignupRole, logout, setApiUrl,
   // navigation
   go, newChat, openConversation, deleteConversation,
   // chat
@@ -966,9 +1089,14 @@ Object.assign(window, {
   // committee head: my SOPs
   uploadCommitteeFile,
   // admin: approvals
-  approveUpload, rejectUpload, previewPendingUpload, downloadPendingUpload,
+  approveUpload, rejectUpload, previewPendingUpload, downloadPendingUpload, approveSignup, rejectSignup,
   // citation document viewer
   openDoc, closeDoc, downloadDoc,
 });
 
-renderLanding();
+if (restoreSession()) {
+  renderApp();
+  loadHistory().then(renderHistory);
+} else {
+  renderLanding();
+}

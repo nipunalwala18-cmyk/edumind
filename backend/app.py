@@ -7,7 +7,9 @@ Endpoints:
   GET  /                          — serve frontend index.html
   GET  /styles.css, /app.js       — serve static assets
 
+  GET  /api/auth/departments      — department dropdown choices
   POST /api/auth/login            — JWT login
+  POST /api/auth/signup           — self-service Student/Faculty signup (pending admin approval)
   POST /api/chat                  — public chat (no auth, role=Public)
   POST /api/chat/auth             — authenticated chat (saves history)
   GET  /api/chat/stream           — SSE streaming, public
@@ -42,6 +44,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.auth import create_access_token, get_current_user, hash_password, verify_password
+from backend.constants import DEPARTMENTS, SIGNUP_ROLES
 from backend.database import ChatMessage, User, get_db, init_db
 
 logger = logging.getLogger(__name__)
@@ -196,6 +199,8 @@ class LoginRequest(BaseModel):
 class SignupRequest(BaseModel):
     username: str
     password: str
+    role: str
+    department: str
 
 
 class ChatRequest(BaseModel):
@@ -211,6 +216,12 @@ class AgentChatRequest(BaseModel):
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
+@app.get("/api/auth/departments")
+def auth_departments():
+    """Department choices for the signup dropdown."""
+    return {"departments": DEPARTMENTS}
+
+
 @app.post("/api/auth/login")
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == payload.username).first()
@@ -219,12 +230,23 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
+    if user.approval_status == "pending":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is awaiting admin approval. Please check back later.",
+        )
+    if user.approval_status == "rejected":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Your signup was rejected: {user.rejection_reason or 'no reason given'}.",
+        )
     token = create_access_token({"sub": user.username, "role": user.role})
     return {
         "access_token": token,
         "token_type":   "bearer",
         "role":         user.role,
         "username":     user.username,
+        "department":   user.department,
         "is_committee_head": user.is_committee_head,
         "committee_name":    user.committee_name,
     }
@@ -232,8 +254,10 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/signup")
 def signup(payload: SignupRequest, db: Session = Depends(get_db)):
-    """Self-service registration. New accounts always start as role=Student —
-    Faculty/Admin/Committee Head are assigned by an Admin, never self-selected."""
+    """Self-service registration for Students and Faculty. Every new account is
+    staged as approval_status='pending' and cannot log in until an Admin
+    approves it. Admin/Committee Head are assigned by an Admin, never
+    self-selected."""
     username = payload.username.strip()
     password = payload.password
 
@@ -244,23 +268,28 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)):
         )
     if len(password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    if payload.role not in SIGNUP_ROLES:
+        raise HTTPException(status_code=400, detail=f"Role must be one of: {', '.join(SIGNUP_ROLES)}.")
+    if payload.department not in DEPARTMENTS:
+        raise HTTPException(status_code=400, detail="Please select a valid department.")
 
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=409, detail="That username is already taken.")
 
-    user = User(username=username, hashed_password=hash_password(password), role="Student")
+    user = User(
+        username=username,
+        hashed_password=hash_password(password),
+        role=payload.role,
+        department=payload.department,
+        approval_status="pending",
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    token = create_access_token({"sub": user.username, "role": user.role})
     return {
-        "access_token": token,
-        "token_type":   "bearer",
-        "role":         user.role,
-        "username":     user.username,
-        "is_committee_head": user.is_committee_head,
-        "committee_name":    user.committee_name,
+        "status":  "pending",
+        "message": "Your account has been submitted and is awaiting admin approval.",
     }
 
 
@@ -650,6 +679,9 @@ def list_users(
             "id": u.id,
             "username": u.username,
             "role": u.role,
+            "department": u.department,
+            "approval_status": u.approval_status,
+            "rejection_reason": u.rejection_reason,
             "is_committee_head": u.is_committee_head,
             "committee_name": u.committee_name,
         }
@@ -992,6 +1024,74 @@ def admin_reject_upload(
         return reject_upload(upload_id, current_user.username, payload.reason.strip())
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get("/api/admin/pending-signups")
+def admin_pending_signups(
+    _: User = Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """List Student/Faculty signups awaiting review."""
+    users = (
+        db.query(User)
+        .filter(User.approval_status == "pending")
+        .order_by(User.created_at.asc())
+        .all()
+    )
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "role": u.role,
+            "department": u.department,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        for u in users
+    ]
+
+
+@app.post("/api/admin/signups/{user_id}/approve")
+def admin_approve_signup(
+    user_id: int,
+    current_user: User = Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """Approve a pending Student/Faculty signup, allowing the account to log in."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.approval_status != "pending":
+        raise HTTPException(status_code=400, detail=f"Signup already {target.approval_status}.")
+
+    target.approval_status = "approved"
+    target.rejection_reason = None
+    db.commit()
+    db.refresh(target)
+    return {"id": target.id, "username": target.username, "approval_status": target.approval_status}
+
+
+@app.post("/api/admin/signups/{user_id}/reject")
+def admin_reject_signup(
+    user_id: int,
+    payload: RejectRequest,
+    current_user: User = Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """Reject a pending Student/Faculty signup with a reason."""
+    if not payload.reason.strip():
+        raise HTTPException(status_code=400, detail="Rejection reason is required.")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.approval_status != "pending":
+        raise HTTPException(status_code=400, detail=f"Signup already {target.approval_status}.")
+
+    target.approval_status = "rejected"
+    target.rejection_reason = payload.reason.strip()
+    db.commit()
+    db.refresh(target)
+    return {"id": target.id, "username": target.username, "approval_status": target.approval_status, "rejection_reason": target.rejection_reason}
 
 
 @app.patch("/api/admin/users/{user_id}/committee-head")
