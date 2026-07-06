@@ -172,8 +172,8 @@ function enterGuest() {
 /* ═══════════════════════════════════════════════════════════════════ NAV CONFIG */
 const NAV = {
   Public:  [['home', 'Home', I.home], ['chat', 'Assistant', I.chat]],
-  Student: [['home', 'Dashboard', I.home], ['grades', 'Grades', I.grade], ['attendance', 'Attendance', I.calendar], ['chat', 'Assistant', I.chat]],
-  Faculty: [['home', 'Dashboard', I.home], ['analytics', 'Analytics', I.chart], ['research', 'Research', I.flask], ['chat', 'Assistant', I.chat]],
+  Student: [['home', 'Home', I.home], ['chat', 'Assistant', I.chat]],
+  Faculty: [['home', 'Home', I.home], ['chat', 'Assistant', I.chat]],
   Admin:   [['home', 'Dashboard', I.home], ['users', 'Users', I.users], ['documents', 'Documents', I.doc], ['chat', 'Assistant', I.chat]],
 };
 const ROLE_ICON = { Public: I.eye, Student: I.grade, Faculty: I.flask, Admin: I.shield };
@@ -229,8 +229,7 @@ function go(view) {
 
   const titles = {
     home: `Welcome back<span class="greet"> · ${S.user}</span>`,
-    chat: 'Assistant', grades: 'My grades', attendance: 'Attendance',
-    analytics: 'Analytics', research: 'Research', users: 'User directory', documents: 'Documents',
+    chat: 'Assistant', users: 'User directory', documents: 'Documents',
   };
   $('topTitle').innerHTML = titles[view] || 'EduMind';
 
@@ -242,57 +241,18 @@ function go(view) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════ DASHBOARDS */
-function spark(vals, hotIdx) {
-  return `<div class="spark">${vals.map((v, i) => `<i class="${i === hotIdx ? 'on' : ''}" style="height:${v}%"></i>`).join('')}</div>`;
-}
-function ring(pct, color = 'var(--accent)') {
-  const r = 26, c = 2 * Math.PI * r, off = c * (1 - pct / 100);
-  return `<svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="6"/><circle cx="32" cy="32" r="${r}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 32 32)"/></svg>`;
-}
-
 function dashboardHTML(view) {
-  if (S.role === 'Public') {
-    return `
-    <div class="bento">
-      <div class="tile span-2"><div class="ic-box hot">${I.spark}</div><div class="val">EduMind AI</div><div class="lbl">Ask anything about the institution — admissions, programmes, campus and more.</div></div>
-      <div class="tile"><div class="ic-box">${I.book}</div><div class="val">120+</div><div class="lbl">Public documents</div></div>
-      <div class="tile"><div class="ic-box">${I.users}</div><div class="val">8.4k</div><div class="lbl">Students enrolled</div></div>
-    </div>
-    <div class="sec-head"><h3>Try the assistant</h3><span class="more" onclick="go('chat')">Open ${I.chevron}</span></div>
-    ${chatHTML()}` + afterMount();
-  }
-  if (S.role === 'Student') {
-    return `
-    <div class="bento">
-      <div class="tile"><span class="trend up">+0.12</span><div class="ic-box hot">${I.grade}</div><div class="val">3.85</div><div class="lbl">Current GPA</div></div>
-      <div class="tile span-2"><div class="ic-box">${I.calendar}</div><div class="ring-wrap">${ring(92)}<div class="ring-meta"><div class="big">92%</div><div class="small">Attendance this semester · 8 absences allowed</div></div></div></div>
-      <div class="tile"><span class="trend up">2 due</span><div class="ic-box">${I.book}</div><div class="val">6</div><div class="lbl">Active courses</div></div>
-      <div class="tile span-2"><div class="ic-box">${I.chart}</div><div class="lbl" style="margin-bottom:.2rem">Performance trend</div><div class="val" style="font-size:1.3rem">Steady ↗</div>${spark([40, 55, 48, 62, 70, 66, 82], 6)}</div>
-      <div class="tile"><div class="ic-box">${I.pulse}</div><div class="val">8</div><div class="lbl">Assignments</div></div>
-    </div>
-    <div class="sec-head"><h3>Knowledge assistant</h3><span class="more" onclick="go('chat')">Full screen ${I.chevron}</span></div>
-    ${chatHTML()}` + afterMount();
-  }
-  if (S.role === 'Faculty') {
-    return `
-    <div class="bento">
-      <div class="tile"><span class="trend up">+14</span><div class="ic-box hot">${I.users}</div><div class="val">124</div><div class="lbl">Students taught</div></div>
-      <div class="tile"><div class="ic-box">${I.book}</div><div class="val">4</div><div class="lbl">Active courses</div></div>
-      <div class="tile"><span class="trend up">+2</span><div class="ic-box">${I.flask}</div><div class="val">7</div><div class="lbl">Papers published</div></div>
-      <div class="tile span-2"><div class="ic-box">${I.chart}</div><div class="lbl" style="margin-bottom:.2rem">Student engagement</div><div class="val" style="font-size:1.3rem">High</div>${spark([50, 62, 58, 70, 65, 80, 88], 6)}</div>
-      <div class="tile"><div class="ring-wrap">${ring(92, 'var(--accent)')}<div class="ring-meta"><div class="big">4.6</div><div class="small">Avg rating</div></div></div></div>
-    </div>
-    <div class="sec-head"><h3>Knowledge assistant</h3><span class="more" onclick="go('chat')">Full screen ${I.chevron}</span></div>
-    ${chatHTML()}` + afterMount();
-  }
-  /* Admin */
+  const intro = {
+    Public:  'Ask anything about the institution — admissions, programmes, campus and more.',
+    Student: 'Ask about policies, exams, scholarships, schedules and academic procedures.',
+    Faculty: 'Ask about SOPs, research grants, examination procedures and faculty policies.',
+    Admin:   'Ask across the full knowledge base, or manage users and documents from the menu.',
+  }[S.role] || 'Ask anything about the institution.';
+
   return `
-  <div class="bento">
-    <div class="tile"><span class="trend up">+128</span><div class="ic-box hot">${I.users}</div><div class="val">2,547</div><div class="lbl">Total users</div></div>
-    <div class="tile"><span class="trend up">+12</span><div class="ic-box">${I.doc}</div><div class="val">342</div><div class="lbl">Documents indexed</div></div>
-    <div class="tile span-2"><div class="ic-box">${I.chart}</div><div class="lbl" style="margin-bottom:.2rem">AI queries · 30 days</div><div class="val" style="font-size:1.3rem">12,540</div>${spark([30, 45, 40, 58, 52, 72, 90], 6)}</div>
-    <div class="tile span-2"><div class="ring-wrap">${ring(99.8)}<div class="ring-meta"><div class="big">99.8%</div><div class="small">System uptime · all services healthy</div></div></div></div>
-    <div class="tile"><div class="ic-box">${I.pulse}</div><div class="val">4</div><div class="lbl">User roles</div></div>
+  <div class="welcome-hero">
+    <div class="ic-box hot">${I.spark}</div>
+    <div class="wh-text"><div class="wh-title">EduMind Assistant</div><div class="wh-sub">${intro}</div></div>
   </div>
   <div class="sec-head"><h3>Knowledge assistant</h3><span class="more" onclick="go('chat')">Full screen ${I.chevron}</span></div>
   ${chatHTML()}` + afterMount();
