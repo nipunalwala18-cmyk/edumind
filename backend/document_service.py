@@ -20,6 +20,7 @@ Public API:
     get_chunk_text(doc_id, chunk_index)          -> str
     iter_file_bytes(path)                         -> Iterator[bytes]
     render_viewer_html(docref, chunk_index)      -> str
+    render_pending_preview_html(path, filename)  -> str
     media_type_for(path)                          -> str
 """
 
@@ -93,7 +94,7 @@ def can_access(role: Optional[str], access_level: Optional[str]) -> bool:
 @dataclass
 class DocumentRef:
     doc_id:       str
-    path:         Path
+    path:         Optional[Path] # Optional so we can hold reference even if file is missing
     title:        str
     department:   str
     version:      str
@@ -119,8 +120,28 @@ def _safe_path(source_file: Optional[str]) -> Optional[Path]:
     return candidate if candidate.is_file() else None
 
 
-def _detect_kind(path: Path) -> str:
+def _safe_path_lenient(source_file: Optional[str]) -> Optional[Path]:
+    """
+    Resolves a ledger `source_file` to an absolute path and verifies it is
+    inside the data/ root. Returns resolved path even if file is missing on disk.
+    """
+    if not source_file:
+        return None
+    rel = str(source_file).replace("\\", "/")
+    candidate = (Path(_PROJECT_ROOT) / rel).resolve()
+    try:
+        candidate.relative_to(_DATA_ROOT)
+    except ValueError:
+        logger.warning("[DOCVIEW] rejected out-of-root path: %s", source_file)
+        return None
+    return candidate
+
+
+def _detect_kind(path: Optional[Path], filename_fallback: str = "") -> str:
     """Detect file type by magic bytes, falling back to the extension."""
+    if not path or not path.is_file():
+        ext = os.path.splitext(filename_fallback or (path.name if path else ""))[1].lower().replace(".", "")
+        return ext if ext in ("pdf", "docx", "doc") else "unknown"
     try:
         with open(path, "rb") as f:
             head = f.read(8)
@@ -138,8 +159,9 @@ def _detect_kind(path: Path) -> str:
 
 def load_document(doc_id: str) -> Optional[DocumentRef]:
     """
-    Looks up a document by doc_id in the ledger and returns a DocumentRef with a
-    validated physical path. Returns None if unknown or the file is missing.
+    Looks up a document by doc_id in the ledger and returns a DocumentRef.
+    Returns None if unknown, but does NOT return None if the file is missing from disk
+    (sets path and kind appropriately so metadata can still be viewed).
     """
     if not doc_id:
         return None
@@ -153,10 +175,22 @@ def load_document(doc_id: str) -> Optional[DocumentRef]:
     if not rec:
         return None
 
-    path = _safe_path(rec.get("source_file") or rec.get("filepath"))
+    source_file = rec.get("source_file") or rec.get("filepath") or ""
+    path = _safe_path_lenient(source_file)
     if path is None:
-        logger.warning("[DOCVIEW] no servable file for doc_id=%s", doc_id)
+        logger.warning("[DOCVIEW] path traversal or invalid path for doc_id=%s", doc_id)
         return None
+
+    if not path.is_file():
+        parent = path.parent
+        if parent.is_dir():
+            def _norm_name(n: str) -> str:
+                return n.lower().replace(" ", "").replace(".docx", "").replace(".doc", "")
+            target_norm = _norm_name(path.name)
+            for child in parent.iterdir():
+                if child.is_file() and _norm_name(child.name) == target_norm:
+                    path = child
+                    break
 
     return DocumentRef(
         doc_id=doc_id,
@@ -166,8 +200,9 @@ def load_document(doc_id: str) -> Optional[DocumentRef]:
         version=rec.get("version") or "1.0",
         category=rec.get("category") or "SOP",
         access_level=rec.get("access_level") or "Public",
-        kind=_detect_kind(path),
+        kind=_detect_kind(path, source_file),
     )
+
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +273,100 @@ def _extract_docx_paragraphs(path: Path) -> list[str]:
             if cells:
                 out.append(" | ".join(cells))
     return out
+
+
+def render_docx_to_html(path: Path, chunk_text: str) -> tuple[str, bool]:
+    """Converts a .docx file to a rich HTML layout (headings, tables, lists, styles) with highlighting."""
+    import docx
+    from docx.text.paragraph import Paragraph
+    from docx.table import Table
+
+    doc = docx.Document(str(path))
+    chunk_norm = _norm(chunk_text)
+
+    html_parts = []
+    found_any = False
+
+    for element in doc.element.body:
+        if element.tag.endswith('p'):
+            p = Paragraph(element, doc)
+            text = p.text
+            if not text or not text.strip():
+                continue
+
+            pnorm = _norm(text)
+            is_hit = bool(chunk_norm) and len(pnorm) > 12 and pnorm in chunk_norm
+
+            p_html = ""
+            for run in p.runs:
+                r_text = html.escape(run.text)
+                if run.bold:
+                    r_text = f"<strong>{r_text}</strong>"
+                if run.italic:
+                    r_text = f"<em>{r_text}</em>"
+                p_html += r_text
+
+            if not p_html and text:
+                p_html = html.escape(text)
+
+            anchor = ""
+            hit_class = ""
+            if is_hit:
+                if not found_any:
+                    anchor = ' id="hl"'
+                hit_class = " hit"
+                p_html = f"<mark>{p_html}</mark>"
+                found_any = True
+
+            style_name = p.style.name.lower()
+            if "heading 1" in style_name:
+                html_parts.append(f'<h1 class="heading-1{hit_class}"{anchor}>{p_html}</h1>')
+            elif "heading 2" in style_name:
+                html_parts.append(f'<h2 class="heading-2{hit_class}"{anchor}>{p_html}</h2>')
+            elif "heading 3" in style_name:
+                html_parts.append(f'<h3 class="heading-3{hit_class}"{anchor}>{p_html}</h3>')
+            elif "list bullet" in style_name or "bullet" in style_name:
+                html_parts.append(f'<li class="bullet-item{hit_class}"{anchor}>{p_html}</li>')
+            else:
+                html_parts.append(f'<p class="para{hit_class}"{anchor}>{p_html}</p>')
+
+        elif element.tag.endswith('tbl'):
+            t = Table(element, doc)
+            table_html = ['<table class="doc-table">']
+            for row in t.rows:
+                table_html.append('<tr>')
+                for cell in row.cells:
+                    cell_html = []
+                    for cp in cell.paragraphs:
+                        if not cp.text or not cp.text.strip():
+                            continue
+                        cp_norm = _norm(cp.text)
+                        is_cp_hit = bool(chunk_norm) and len(cp_norm) > 12 and cp_norm in chunk_norm
+
+                        cp_text = ""
+                        for run in cp.runs:
+                            r_text = html.escape(run.text)
+                            if run.bold:
+                                r_text = f"<strong>{r_text}</strong>"
+                            if run.italic:
+                                r_text = f"<em>{r_text}</em>"
+                            cp_text += r_text
+                        if not cp_text and cp.text:
+                            cp_text = html.escape(cp.text)
+
+                        anchor = ""
+                        if is_cp_hit:
+                            if not found_any:
+                                anchor = ' id="hl"'
+                            cp_text = f"<mark>{cp_text}</mark>"
+                            found_any = True
+                        cell_html.append(f'<p class="table-para"{anchor}>{cp_text}</p>')
+                    table_html.append(f'<td>{" ".join(cell_html)}</td>')
+                table_html.append('</tr>')
+            table_html.append('</table>')
+            html_parts.append("\n".join(table_html))
+
+    return "\n".join(html_parts), found_any
 
 
 def _extract_pdf_paragraphs(path: Path) -> Optional[list[str]]:
@@ -317,6 +446,18 @@ padding:1rem 1.2rem;color:var(--text2);font-size:.9rem;margin-bottom:1.2rem;}
 .chunk-box{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--mark);
 border-radius:10px;padding:1rem 1.2rem;font-size:.9rem;white-space:pre-wrap;}
 embed{width:100%;height:78vh;border:1px solid var(--border);border-radius:10px;background:#fff;}
+.heading-1{font-size:1.6rem;font-weight:800;margin:1.8rem 0 1rem;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:0.4rem;}
+.heading-1.hit{scroll-margin-top:90px;}
+.heading-2{font-size:1.3rem;font-weight:700;margin:1.5rem 0 0.8rem;color:var(--text);}
+.heading-2.hit{scroll-margin-top:90px;}
+.heading-3{font-size:1.1rem;font-weight:600;margin:1.2rem 0 0.6rem;color:var(--text2);}
+.heading-3.hit{scroll-margin-top:90px;}
+.bullet-item{margin-left:1.5rem;margin-bottom:0.5rem;list-style-type:disc;font-size:0.93rem;color:var(--text);}
+.bullet-item.hit{scroll-margin-top:90px;}
+.doc-table{width:100%;border-collapse:collapse;margin:1.5rem 0;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+.doc-table td{border:1px solid var(--border);padding:0.75rem 1rem;font-size:0.88rem;color:var(--text2);vertical-align:top;}
+.doc-table tr:nth-child(even){background:rgba(255,255,255,0.02);}
+.table-para{margin:0;font-size:0.88rem;line-height:1.4;}
 """
 
 _SCROLL_JS = """
@@ -355,11 +496,54 @@ def render_viewer_html(docref: DocumentRef, chunk_index: Optional[int]) -> str:
     """
     chunk_text = get_chunk_text(docref.doc_id, chunk_index)
 
-    # --- DOCX: native paragraph extraction + inline highlight (primary path) ---
+    # --- Fallback: File is missing from disk ---
+    if docref.path is None or not docref.path.is_file():
+        try:
+            import ledger
+            all_chunks = ledger.get_chunks_by_doc_id(docref.doc_id)
+        except Exception:
+            all_chunks = []
+        
+        adjacent_html = ""
+        current_chunk_idx = chunk_index if chunk_index is not None else 0
+        
+        if all_chunks:
+            adjacent_html += "<div style='margin-top: 1.5rem;'><h4 style='color: var(--text2); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem;'>Document Chunk Navigation (Original File Unavailable)</h4>"
+            adjacent_html += "<div style='display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 1rem;'>"
+            for c in all_chunks:
+                c_idx = c.get("chunk_index", 0)
+                active_style = "background: var(--mark); color: #0a0a0b; font-weight: 600;" if c_idx == current_chunk_idx else "background: var(--surface2); color: var(--text2);"
+                adjacent_html += f"<a href='?chunk_index={c_idx}' style='text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; {active_style}'>Chunk {c_idx + 1}</a>"
+            adjacent_html += "</div>"
+            
+            active_chunk = None
+            for c in all_chunks:
+                if c.get("chunk_index") == current_chunk_idx:
+                    active_chunk = c
+                    break
+            if not active_chunk and all_chunks:
+                active_chunk = all_chunks[0]
+                
+            if active_chunk:
+                content = active_chunk.get("content", "")
+                section = active_chunk.get("section_heading", "")
+                sect_info = f"<div style='font-size: 0.85rem; color: var(--text3); margin-bottom: 0.5rem;'>Section: {html.escape(section)}</div>" if section else ""
+                adjacent_html += f"<div class='chunk-box' style='font-family: inherit; font-size: 0.93rem;'>{sect_info}{html.escape(content)}</div>"
+            adjacent_html += "</div>"
+        else:
+            adjacent_html += _chunk_fallback(chunk_text, "Original source document is not available.")
+            
+        return _page(
+            docref,
+            chunk_index,
+            f"<div class='notice' style='border-left: 3px solid #ef4444;'>Original document file is unavailable on disk. Displaying retrieved chunk evidence.</div>{adjacent_html}",
+            flag="Chunk Fallback View (File Unavailable)"
+        )
+
+    # --- DOCX: rich document layout rendering + inline highlight ---
     if docref.kind == "docx":
         try:
-            paragraphs = _extract_docx_paragraphs(docref.path)
-            body, found = _highlight_body(paragraphs, chunk_text)
+            body, found = render_docx_to_html(docref.path, chunk_text)
             flag = ("Highlighted: the passage that generated the answer"
                     if found else "Document opened (exact passage not located)")
             return _page(docref, chunk_index, body, flag)
@@ -404,3 +588,60 @@ def render_viewer_html(docref: DocumentRef, chunk_index: Optional[int]) -> str:
 def _chunk_fallback(chunk_text: str, message: str) -> str:
     safe = html.escape(chunk_text or "(passage unavailable)")
     return f"<div class='notice'>{html.escape(message)}</div><div class='chunk-box'>{safe}</div>"
+
+
+def render_pending_preview_html(path: Path, filename: str) -> str:
+    """
+    Renders a not-yet-ingested (pending committee-head) submission for admin
+    review, reusing the same docx/pdf renderers as the citation viewer but
+    without a DocumentRef/chunk (nothing has been chunked or approved yet).
+    """
+    kind = _detect_kind(path, filename)
+    title = html.escape(filename)
+
+    if kind == "docx":
+        try:
+            body, _ = render_docx_to_html(path, "")
+        except Exception as exc:
+            logger.error("[DOCVIEW] pending docx render failed: %s", exc, exc_info=True)
+            body = "<div class='notice'>Could not render this document.</div>"
+    elif kind == "pdf":
+        paras = _extract_pdf_paragraphs(path)
+        if paras:
+            body = "".join(f"<p class='para'>{html.escape(p)}</p>" for p in paras)
+        else:
+            size = path.stat().st_size
+            if size <= _PDF_INLINE_CAP:
+                b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+                body = f"<embed type='application/pdf' src='data:application/pdf;base64,{b64}'>"
+            else:
+                body = "<div class='notice'>This PDF is too large to preview inline. Download it to review.</div>"
+    else:
+        body = "<div class='notice'>This file type has no in-browser preview. Download it to review.</div>"
+
+    return (
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        f"<title>{title}</title><style>{_VIEWER_CSS}</style></head><body>"
+        "<div class='doc-head'>"
+        f"<div class='doc-title'>{title}</div>"
+        "<div class='doc-flag'>Pending review — not yet in the knowledge base</div>"
+        "</div>"
+        f"<div class='doc-body'>{body}</div></body></html>"
+    )
+
+
+def get_chunk_by_id(chunk_id: str) -> Optional[dict]:
+    """Retrieves a chunk's content and metadata by its chunk_id from the ledger."""
+    try:
+        import ledger
+        conn = ledger.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM chunks WHERE chunk_id = ?", (chunk_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+    except Exception as exc:
+        logger.error("[DOCVIEW] chunk lookup failed for chunk_id=%s: %s", chunk_id, exc)
+        return None
+

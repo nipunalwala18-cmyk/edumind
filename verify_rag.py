@@ -356,7 +356,7 @@ def run_e2e_queries() -> None:
             _info("Chunks retrieved", resp.retrieved_chunks)
             _info("Chunks in ctx",   resp.chunks_in_context)
             _info("Top score",       f"{resp.confidence_score:.4f}")
-            _info("Confidence",      resp.confidence.value)
+            _info("Confidence",      resp.confidence)
             _info("Tokens",          resp.total_tokens)
             _info("Retrieval ms",    f"{resp.retrieval_time_ms:.0f}")
             _info("Generation ms",   f"{resp.generation_time_ms:.0f}")

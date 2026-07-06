@@ -36,16 +36,19 @@ class Citation(BaseModel):
     # Document identity
     doc_id:            str   = Field(...,  description="SHA-256 document hash.")
     display_name:      str   = Field(...,  description="Human-readable document title.")
+    title:             str   = Field(default="", description="Parent document title.")
     department:        str   = Field(default="General")
     category:          str   = Field(default="SOP")
     version:           str   = Field(default="1.0")
     source_file:       str   = Field(default="", description="Relative path to source .docx")
+    filepath:          str   = Field(default="", description="Absolute or resolved file path.")
     section_heading:   str   = Field(default="")
     access_level:      str   = Field(default="Public")
 
     # Chunk provenance
     chunk_ids:         list[str] = Field(default_factory=list,
         description="All chunk IDs from this document included in the retrieval set.")
+    chunk_id:          str   = Field(default="", description="Main chunk ID referenced.")
     chunk_index:       int   = Field(default=0,
         description="0-based index of the earliest included chunk (document position).")
     total_chunks:      int   = Field(default=0,
@@ -56,6 +59,8 @@ class Citation(BaseModel):
     # Scores
     score:             float         = Field(..., description="Best effective score [0, 1].")
     rerank_score:      Optional[float] = Field(default=None)
+    retrieval_score:   float         = Field(default=0.0, description="Main chunk retrieval score.")
+
 
     # Version conflict flag
     is_latest_version: bool  = Field(default=True,
@@ -97,17 +102,21 @@ class Citation(BaseModel):
             "citation_id":       self.citation_id,
             "doc_id":            self.doc_id,
             "display_name":      self.display_name,
+            "title":             self.title or self.display_name,
             "department":        self.department,
             "category":          self.category,
             "version":           self.version,
             "source_file":       self.source_file,
+            "filepath":          self.filepath,
             "section_heading":   self.section_heading,
             "chunk_ids":         self.chunk_ids,
+            "chunk_id":          self.chunk_id,
             "chunk_index":       self.chunk_index,
             "total_chunks":      self.total_chunks,
             "page_number":       self.page_number,
             "score":             round(eff_score, 4),
             "rerank_score":      round(self.rerank_score, 4) if self.rerank_score is not None else None,
+            "retrieval_score":   round(self.retrieval_score, 4),
             "access_level":      self.access_level,
             "is_latest_version": self.is_latest_version,
             "url":               self.url,

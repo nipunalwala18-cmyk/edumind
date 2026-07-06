@@ -90,7 +90,7 @@ def real_docx():
         pytest.skip("no ingested .docx documents in ledger")
     doc_id = row[0]
     ref = ds.load_document(doc_id)
-    if ref is None:
+    if ref is None or ref.path is None or not ref.path.is_file():
         pytest.skip("document file not present on disk")
     return ref
 

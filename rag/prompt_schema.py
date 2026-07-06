@@ -38,22 +38,11 @@ class PromptTemplate(str, Enum):
     STRICT_CITATION = "strict_citation"
 
 
-class ConfidenceLabel(str, Enum):
-    HIGH    = "High"
-    MEDIUM  = "Medium"
-    LOW     = "Low"
-    UNKNOWN = "Unknown"
-
-
-def confidence_from_score(score: Optional[float]) -> ConfidenceLabel:
-    """Converts a numeric score in [0, 1] to a ConfidenceLabel."""
+def confidence_from_score(score: Optional[float]) -> str:
+    """Converts a numeric score in [0, 1] to a percentage string."""
     if score is None:
-        return ConfidenceLabel.UNKNOWN
-    if score >= 0.70:
-        return ConfidenceLabel.HIGH
-    if score >= 0.40:
-        return ConfidenceLabel.MEDIUM
-    return ConfidenceLabel.LOW
+        return "0%"
+    return f"{round(score * 100)}%"
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +68,7 @@ class ContextChunk(BaseModel):
     rank:             int            = Field(..., description="Retrieval rank (1 = best).")
     score:            float          = Field(..., description="Relevance score [0, 1].")
     rerank_score:     Optional[float] = Field(default=None)
-    confidence:       ConfidenceLabel = Field(default=ConfidenceLabel.UNKNOWN)
+    confidence:       str            = Field(default="0%")
 
     def to_prompt_block(self, include_metadata: bool = True) -> str:
         """
@@ -87,7 +76,7 @@ class ContextChunk(BaseModel):
 
         Example output:
             [SOURCE 1] VIT Admissions SOP (v1.0) — Admission Process — chunk 3 of 27
-            Department: Admissions | Category: SOP | Version: 1.0 | Score: 0.934 | Confidence: High
+            Department: Admissions | Category: SOP | Version: 1.0 | Score: 0.934 | Confidence: 93%
             ---
             <chunk text>
         """
@@ -97,7 +86,7 @@ class ContextChunk(BaseModel):
             lines.append(
                 f"Department: {self.department} | Category: {self.category} | "
                 f"Version: {self.version} | Score: {eff_score:.3f} | "
-                f"Confidence: {self.confidence.value}"
+                f"Confidence: {self.confidence}"
             )
         lines.append("---")
         lines.append(self.content)

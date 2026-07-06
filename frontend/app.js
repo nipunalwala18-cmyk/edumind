@@ -3,11 +3,7 @@
    ═══════════════════════════════════════════════════════════════════ */
 let API = localStorage.getItem('EDUMIND_API_URL');
 if (!API) {
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    API = 'http://localhost:8000';
-  } else {
-    API = window.location.origin;
-  }
+  API = window.location.origin;
 }
 
 function setApiUrl(val) {
@@ -17,11 +13,7 @@ function setApiUrl(val) {
     API = cleanVal;
   } else {
     localStorage.removeItem('EDUMIND_API_URL');
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      API = 'http://localhost:8000';
-    } else {
-      API = window.location.origin;
-    }
+    API = window.location.origin;
   }
   if (document.getElementById('landingApiUrl')) document.getElementById('landingApiUrl').value = API;
   if (document.getElementById('apiUrl')) document.getElementById('apiUrl').value = API;
@@ -30,6 +22,7 @@ function setApiUrl(val) {
 const S = {
   user: null, role: null, token: null, isPublic: false,
   sessionId: null, view: 'home', messages: [], history: [], busy: false,
+  isCommitteeHead: false, committeeName: null,
 };
 
 /* ── SVG icon set (stroke = currentColor) ──────────────────────────── */
@@ -81,6 +74,10 @@ const $ = (id) => document.getElementById(id);
 const esc = (t) => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
 const now = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 const initials = (n) => n.replace(/_/g, ' ').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+const extractConfidence = (content) => {
+  const match = content.match(/(?:\*\*|\[)Confidence:\s*(\d+%)(?:\*\*|\])/i);
+  return match ? match[1] : "";
+};
 
 /* ═══════════════════════════════════════════════════════════════════ LANDING */
 function renderLanding() {
@@ -119,52 +116,93 @@ function renderLanding() {
   </div>
 
   <div id="loginModal" class="modal">
-    <div class="modal-card">
-      <button class="x" onclick="closeLogin()">${I.x}</button>
-      ${I.logo.replace('class="mark"', 'class="mark-lg"')}
-      <h2>Welcome back</h2>
-      <p class="sub">Sign in to unlock your personalised workspace.</p>
-      <div class="modal-err" id="loginErr"></div>
-      <form onsubmit="doLogin(event)">
-        <div class="field"><label>Username</label><input id="u" placeholder="e.g. student_test" autocomplete="off" required></div>
-        <div class="field"><label>Password</label><input id="p" type="password" placeholder="••••••••" required></div>
-        <div class="field"><label>API Endpoint</label><input id="apiUrl" placeholder="http://localhost:8000" value="${API || ''}" autocomplete="off" onchange="setApiUrl(this.value)"></div>
-        <button type="submit" class="modal-submit">Continue</button>
-      </form>
-      <div class="demo-box">
-        <div class="lbl">Demo accounts · click to fill</div>
-        <div class="demo-row" onclick="fill('student_test','Student@123')"><span class="who">${I.grade} student_test</span><span class="pw">Student@123</span></div>
-        <div class="demo-row" onclick="fill('faculty_test','Faculty@123')"><span class="who">${I.flask} faculty_test</span><span class="pw">Faculty@123</span></div>
-        <div class="demo-row" onclick="fill('admin_test','Admin@123')"><span class="who">${I.shield} admin_test</span><span class="pw">Admin@123</span></div>
-      </div>
-    </div>
+    <div class="modal-card" id="authCard">${authModalHTML()}</div>
   </div>`;
 }
 
+let authMode = 'login'; // 'login' | 'signup'
+
+function authModalHTML() {
+  const isSignup = authMode === 'signup';
+  return `
+    <button class="x" onclick="closeLogin()">${I.x}</button>
+    ${I.logo.replace('class="mark"', 'class="mark-lg"')}
+    <h2>${isSignup ? 'Create your account' : 'Welcome back'}</h2>
+    <p class="sub">${isSignup ? 'Sign up to unlock your personalised workspace.' : 'Sign in to unlock your personalised workspace.'}</p>
+    <div class="modal-err" id="loginErr"></div>
+    <form onsubmit="handleAuthSubmit(event)">
+      <div class="field"><label>Username</label><input id="u" placeholder="e.g. student_test" autocomplete="off" required></div>
+      <div class="field"><label>Password</label><input id="p" type="password" placeholder="••••••••" autocomplete="off" required></div>
+      ${isSignup ? `<div class="field"><label>Confirm password</label><input id="p2" type="password" placeholder="••••••••" autocomplete="off" required></div>` : ''}
+      <div class="field"><label>API Endpoint</label><input id="apiUrl" placeholder="http://localhost:8000" value="${API || ''}" autocomplete="off" onchange="setApiUrl(this.value)"></div>
+      <button type="submit" class="modal-submit">${isSignup ? 'Create account' : 'Continue'}</button>
+    </form>
+    <p class="auth-switch">
+      ${isSignup ? `Already have an account? <a onclick="switchAuthMode('login')">Sign in</a>` : `New here? <a onclick="switchAuthMode('signup')">Create an account</a>`}
+    </p>
+    ${isSignup ? '' : `
+    <div class="demo-box">
+      <div class="lbl">Demo accounts · click to fill</div>
+      <div class="demo-row" onclick="fill('student_test','Student@123')"><span class="who">${I.grade} student_test</span><span class="pw">Student@123</span></div>
+      <div class="demo-row" onclick="fill('faculty_test','Faculty@123')"><span class="who">${I.flask} faculty_test</span><span class="pw">Faculty@123</span></div>
+      <div class="demo-row" onclick="fill('admin_test','Admin@123')"><span class="who">${I.shield} admin_test</span><span class="pw">Admin@123</span></div>
+    </div>`}`;
+}
+
+function switchAuthMode(mode) {
+  authMode = mode;
+  $('authCard').innerHTML = authModalHTML();
+}
+
 const openLogin = () => {
+  authMode = 'login';
+  $('authCard').innerHTML = authModalHTML();
   $('loginModal').classList.add('active');
   $('apiUrl').value = API;
 };
 const closeLogin = () => $('loginModal').classList.remove('active');
 const fill = (u, p) => { $('u').value = u; $('p').value = p; };
 
-async function doLogin(e) {
-  e.preventDefault();
+function handleAuthSubmit(e) {
+  return authMode === 'signup' ? doSignup(e) : doLogin(e);
+}
+
+async function _authRequest(endpointPath, body) {
   const err = $('loginErr');
   const endpoint = $('apiUrl').value.trim();
   setApiUrl(endpoint);
   try {
-    const r = await fetch(`${API}/api/auth/login`, {
+    const r = await fetch(`${API}${endpointPath}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: $('u').value, password: $('p').value }),
+      body: JSON.stringify(body),
     });
     if (r.ok) {
       const d = await r.json();
       S.token = d.access_token; S.user = d.username; S.role = d.role; S.isPublic = false;
+      S.isCommitteeHead = !!d.is_committee_head; S.committeeName = d.committee_name || null;
       await loadHistory();
       renderApp();
-    } else { err.textContent = 'Invalid username or password.'; err.classList.add('show'); }
+    } else {
+      const d = await r.json().catch(() => ({}));
+      err.textContent = d.detail || 'Something went wrong.'; err.classList.add('show');
+    }
   } catch { err.textContent = 'Cannot reach server. Is the backend running?'; err.classList.add('show'); }
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  await _authRequest('/api/auth/login', { username: $('u').value, password: $('p').value });
+}
+
+async function doSignup(e) {
+  e.preventDefault();
+  const err = $('loginErr');
+  const password = $('p').value, confirm = $('p2').value;
+  if (password !== confirm) {
+    err.textContent = 'Passwords do not match.'; err.classList.add('show');
+    return;
+  }
+  await _authRequest('/api/auth/signup', { username: $('u').value, password });
 }
 
 function enterGuest() {
@@ -176,11 +214,19 @@ function enterGuest() {
 /* ═══════════════════════════════════════════════════════════════════ NAV CONFIG */
 const NAV = {
   Public:  [['home', 'Home', I.home], ['chat', 'Assistant', I.chat]],
-  Student: [['home', 'Dashboard', I.home], ['grades', 'Grades', I.grade], ['attendance', 'Attendance', I.calendar], ['chat', 'Assistant', I.chat]],
-  Faculty: [['home', 'Dashboard', I.home], ['analytics', 'Analytics', I.chart], ['research', 'Research', I.flask], ['chat', 'Assistant', I.chat]],
-  Admin:   [['home', 'Dashboard', I.home], ['users', 'Users', I.users], ['documents', 'Documents', I.doc], ['chat', 'Assistant', I.chat]],
+  Student: [['home', 'Home', I.home], ['chat', 'Assistant', I.chat]],
+  Faculty: [['home', 'Home', I.home], ['chat', 'Assistant', I.chat]],
+  Admin:   [['home', 'Dashboard', I.home], ['users', 'Users', I.users], ['documents', 'Documents', I.doc], ['approvals', 'Approvals', I.doc], ['chat', 'Assistant', I.chat]],
 };
 const ROLE_ICON = { Public: I.eye, Student: I.grade, Faculty: I.flask, Admin: I.shield };
+
+function navFor() {
+  const base = NAV[S.role] || NAV.Public;
+  if (S.role === 'Student' && S.isCommitteeHead) {
+    return [...base, ['my-sops', 'My SOPs', I.upload]];
+  }
+  return base;
+}
 
 const SUGGEST = {
   Public:  ['What programmes are offered?', 'How do I apply for admission?', 'Where is the campus located?'],
@@ -191,7 +237,7 @@ const SUGGEST = {
 
 /* ═══════════════════════════════════════════════════════════════════ APP SHELL */
 function renderApp() {
-  const nav = NAV[S.role] || NAV.Public;
+  const nav = navFor();
   $('app').innerHTML = `
   <div class="shell">
     <aside class="side">
@@ -217,86 +263,78 @@ function renderApp() {
           <span class="chip"><span class="live"></span> ${S.isPublic ? 'Guest session' : S.role + ' access'}</span>
         </div>
       </div>
+      <div id="indexBanner" class="index-banner" style="display:none"></div>
       <div class="scroll" id="scroll"></div>
     </main>
   </div>`;
-  go(S.view === 'home' || NAV[S.role].some(n => n[0] === S.view) ? S.view : 'home');
+  go(S.view === 'home' || navFor().some(n => n[0] === S.view) ? S.view : 'home');
   renderHistory();
+  startIndexingPoll();
+}
+
+/* ═══════════════════════════════════════════════════════════════════ INDEXING STATUS
+   A document being ingested/embedded blocks nothing for other users, but we
+   surface it so everyone knows the knowledge base is briefly updating. Polled
+   from the public /api/indexing-status endpoint (works for guests too). */
+let _indexPollTimer = null;
+async function pollIndexingStatus() {
+  const banner = $('indexBanner');
+  if (!banner) return;
+  try {
+    const r = await fetch(`${API}/api/indexing-status`);
+    if (!r.ok) return;
+    const s = await r.json();
+    if (s.active) {
+      banner.style.display = 'flex';
+      banner.innerHTML = `<span class="spin"></span> Knowledge base is updating — indexing <b>${esc(s.filename || 'a document')}</b>. Answers may briefly omit it.`;
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch {}
+}
+
+function startIndexingPoll() {
+  pollIndexingStatus();
+  if (_indexPollTimer) return;                 // one shared timer across re-renders
+  _indexPollTimer = setInterval(pollIndexingStatus, 3000);
 }
 
 function go(view) {
   S.view = view;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const idx = (NAV[S.role] || NAV.Public).findIndex(n => n[0] === view);
+  const idx = navFor().findIndex(n => n[0] === view);
   const items = document.querySelectorAll('.nav-item');
   if (items[idx]) items[idx].classList.add('active');
 
   const titles = {
     home: `Welcome back<span class="greet"> · ${S.user}</span>`,
-    chat: 'Assistant', grades: 'My grades', attendance: 'Attendance',
-    analytics: 'Analytics', research: 'Research', users: 'User directory', documents: 'Documents',
+    chat: 'Assistant', users: 'User directory', documents: 'Documents',
+    'my-sops': 'My SOPs', approvals: 'Pending Approvals',
   };
   $('topTitle').innerHTML = titles[view] || 'EduMind';
 
   const scroll = $('scroll');
   if (view === 'chat') { scroll.innerHTML = `<div class="view">${chatHTML()}</div>`; mountChat(); }
-  else if (view === 'documents') { scroll.innerHTML = `<div class="view">${documentsHTML()}</div>`; }
+  else if (view === 'documents') { scroll.innerHTML = `<div class="view">${documentsHTML()}</div>`; loadDocuments(); }
   else if (view === 'users') { scroll.innerHTML = `<div class="view">${usersHTML()}</div>`; }
+  else if (view === 'my-sops') { scroll.innerHTML = `<div class="view">${mySopsHTML()}</div>`; loadMyUploads(); }
+  else if (view === 'approvals') { scroll.innerHTML = `<div class="view">${approvalsHTML()}</div>`; loadPendingApprovals(); }
   else { scroll.innerHTML = `<div class="view">${dashboardHTML(view)}</div>`; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════ DASHBOARDS */
-function spark(vals, hotIdx) {
-  return `<div class="spark">${vals.map((v, i) => `<i class="${i === hotIdx ? 'on' : ''}" style="height:${v}%"></i>`).join('')}</div>`;
-}
-function ring(pct, color = 'var(--accent)') {
-  const r = 26, c = 2 * Math.PI * r, off = c * (1 - pct / 100);
-  return `<svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="${r}" fill="none" stroke="var(--surface-3)" stroke-width="6"/><circle cx="32" cy="32" r="${r}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 32 32)"/></svg>`;
-}
-
 function dashboardHTML(view) {
-  if (S.role === 'Public') {
-    return `
-    <div class="bento">
-      <div class="tile span-2"><div class="ic-box hot">${I.spark}</div><div class="val">EduMind AI</div><div class="lbl">Ask anything about the institution — admissions, programmes, campus and more.</div></div>
-      <div class="tile"><div class="ic-box">${I.book}</div><div class="val">120+</div><div class="lbl">Public documents</div></div>
-      <div class="tile"><div class="ic-box">${I.users}</div><div class="val">8.4k</div><div class="lbl">Students enrolled</div></div>
-    </div>
-    <div class="sec-head"><h3>Try the assistant</h3><span class="more" onclick="go('chat')">Open ${I.chevron}</span></div>
-    ${chatHTML()}` + afterMount();
-  }
-  if (S.role === 'Student') {
-    return `
-    <div class="bento">
-      <div class="tile"><span class="trend up">+0.12</span><div class="ic-box hot">${I.grade}</div><div class="val">3.85</div><div class="lbl">Current GPA</div></div>
-      <div class="tile span-2"><div class="ic-box">${I.calendar}</div><div class="ring-wrap">${ring(92)}<div class="ring-meta"><div class="big">92%</div><div class="small">Attendance this semester · 8 absences allowed</div></div></div></div>
-      <div class="tile"><span class="trend up">2 due</span><div class="ic-box">${I.book}</div><div class="val">6</div><div class="lbl">Active courses</div></div>
-      <div class="tile span-2"><div class="ic-box">${I.chart}</div><div class="lbl" style="margin-bottom:.2rem">Performance trend</div><div class="val" style="font-size:1.3rem">Steady ↗</div>${spark([40, 55, 48, 62, 70, 66, 82], 6)}</div>
-      <div class="tile"><div class="ic-box">${I.pulse}</div><div class="val">8</div><div class="lbl">Assignments</div></div>
-    </div>
-    <div class="sec-head"><h3>Knowledge assistant</h3><span class="more" onclick="go('chat')">Full screen ${I.chevron}</span></div>
-    ${chatHTML()}` + afterMount();
-  }
-  if (S.role === 'Faculty') {
-    return `
-    <div class="bento">
-      <div class="tile"><span class="trend up">+14</span><div class="ic-box hot">${I.users}</div><div class="val">124</div><div class="lbl">Students taught</div></div>
-      <div class="tile"><div class="ic-box">${I.book}</div><div class="val">4</div><div class="lbl">Active courses</div></div>
-      <div class="tile"><span class="trend up">+2</span><div class="ic-box">${I.flask}</div><div class="val">7</div><div class="lbl">Papers published</div></div>
-      <div class="tile span-2"><div class="ic-box">${I.chart}</div><div class="lbl" style="margin-bottom:.2rem">Student engagement</div><div class="val" style="font-size:1.3rem">High</div>${spark([50, 62, 58, 70, 65, 80, 88], 6)}</div>
-      <div class="tile"><div class="ring-wrap">${ring(92, 'var(--accent)')}<div class="ring-meta"><div class="big">4.6</div><div class="small">Avg rating</div></div></div></div>
-    </div>
-    <div class="sec-head"><h3>Knowledge assistant</h3><span class="more" onclick="go('chat')">Full screen ${I.chevron}</span></div>
-    ${chatHTML()}` + afterMount();
-  }
-  /* Admin */
+  const intro = {
+    Public:  'Ask anything about the institution — admissions, programmes, campus and more.',
+    Student: 'Ask about policies, exams, scholarships, schedules and academic procedures.',
+    Faculty: 'Ask about SOPs, research grants, examination procedures and faculty policies.',
+    Admin:   'Ask across the full knowledge base, or manage users and documents from the menu.',
+  }[S.role] || 'Ask anything about the institution.';
+
   return `
-  <div class="bento">
-    <div class="tile"><span class="trend up">+128</span><div class="ic-box hot">${I.users}</div><div class="val">2,547</div><div class="lbl">Total users</div></div>
-    <div class="tile"><span class="trend up">+12</span><div class="ic-box">${I.doc}</div><div class="val">342</div><div class="lbl">Documents indexed</div></div>
-    <div class="tile span-2"><div class="ic-box">${I.chart}</div><div class="lbl" style="margin-bottom:.2rem">AI queries · 30 days</div><div class="val" style="font-size:1.3rem">12,540</div>${spark([30, 45, 40, 58, 52, 72, 90], 6)}</div>
-    <div class="tile span-2"><div class="ring-wrap">${ring(99.8)}<div class="ring-meta"><div class="big">99.8%</div><div class="small">System uptime · all services healthy</div></div></div></div>
-    <div class="tile"><div class="ic-box">${I.pulse}</div><div class="val">4</div><div class="lbl">User roles</div></div>
+  <div class="welcome-hero">
+    <div class="ic-box hot">${I.spark}</div>
+    <div class="wh-text"><div class="wh-title">EduMind Assistant</div><div class="wh-sub">${intro}</div></div>
   </div>
   <div class="sec-head"><h3>Knowledge assistant</h3><span class="more" onclick="go('chat')">Full screen ${I.chevron}</span></div>
   ${chatHTML()}` + afterMount();
@@ -364,10 +402,21 @@ function msgHTML(msg) {
       <div class="sh" onclick="this.nextElementSibling.classList.toggle('open')">${I.doc} ${count} source${count > 1 ? 's' : ''} ${I.chevron}</div>
       <div class="sl">${items}</div>
     </div>` : '';
+  const confVal = msg.confidence || (msg.isUser ? "" : extractConfidence(msg.content));
+  const confidenceBadge = (!msg.isUser && confVal) ? `
+    <span class="confidence-badge" style="background: rgba(99, 102, 241, 0.1); color: #6366f1; padding: 0.15rem 0.4rem; border-radius: 4px; font-weight: 600; font-size: 0.75rem; border: 1px solid rgba(99, 102, 241, 0.2); margin-left: auto;">Confidence: ${esc(confVal)}</span>
+  ` : '';
   return `
   <div class="msg ${msg.isUser ? 'me' : 'bot'}">
     <div class="av ${msg.isUser ? 'me' : 'bot'}">${msg.isUser ? (S.isPublic ? 'G' : initials(S.user)) : I.spark}</div>
-    <div class="body"><div class="bubble">${esc(msg.content)}</div><div class="time">${msg.time || now()}</div>${srcs}</div>
+    <div class="body">
+      <div class="bubble">${esc(msg.content)}</div>
+      <div class="msg-meta" style="display: flex; align-items: center; gap: 1rem; margin-top: 0.35rem; font-size: 0.75rem; color: var(--text-3);">
+        <div class="time">${msg.time || now()}</div>
+        ${confidenceBadge}
+      </div>
+      ${srcs}
+    </div>
   </div>`;
 }
 
@@ -440,6 +489,7 @@ async function sendMsg() {
             ensureBubble();
             S.messages[botIdx].sources = meta.source_documents || [];
             S.messages[botIdx].citations = meta.citations || [];
+            S.messages[botIdx].confidence = meta.confidence || "";
             if (meta.session_id) S.sessionId = meta.session_id;
           } catch {}
           continue;
@@ -476,12 +526,15 @@ function documentsHTML() {
     <div class="ds">SOPs, circulars, examination guidelines — indexed into the knowledge base.</div>
   </div>
   <input type="file" id="file" accept=".pdf,.docx,.doc" multiple style="display:none" onchange="uploadFiles(event)">
-  <div id="uplist" style="margin-top:1rem"></div>`;
+  <div id="uplist" style="margin-top:1rem"></div>
+  <div class="sec-head" style="margin-top:1.5rem"><h3>Knowledge base documents</h3></div>
+  <div id="docList"><p style="color:var(--text-3);font-size:.88rem">Loading…</p></div>`;
 }
 
 async function uploadFiles(e) {
   const list = $('uplist');
-  for (const f of e.target.files) {
+  const files = [...e.target.files];
+  for (const f of files) {
     const row = document.createElement('div');
     row.className = 'uprow';
     row.innerHTML = `<div class="l"><span class="ic">${I.doc}</span><div><div class="nm">${esc(f.name)}</div><div class="sz">${(f.size / 1024).toFixed(1)} KB</div></div></div><span class="tag" style="background:var(--surface-2);color:var(--text-3)">uploading…</span>`;
@@ -494,6 +547,197 @@ async function uploadFiles(e) {
       else { tag.className = 'tag err'; tag.textContent = 'Failed'; }
     } catch { tag.className = 'tag err'; tag.textContent = 'Error'; }
   }
+  e.target.value = '';
+  loadDocuments();
+}
+
+const ACCESS_PILL = { Admin: 'err', Faculty: '', Student: 'ok', Public: '' };
+
+async function loadDocuments() {
+  const el = $('docList'); if (!el) return;
+  let rows = [];
+  try {
+    const r = await fetch(`${API}/api/admin/documents`, { headers: { 'Authorization': `Bearer ${S.token}` } });
+    if (r.ok) rows = await r.json();
+  } catch {}
+  if (!rows.length) { el.innerHTML = `<p style="color:var(--text-3);font-size:.88rem">No documents in the knowledge base yet.</p>`; return; }
+  el.innerHTML = `
+    <div class="utable dtable">
+      <div class="hr"><div>Document</div><div>Department</div><div>Added by</div><div>Access</div><div>Status</div><div>Actions</div></div>
+      ${rows.map(d => `<div class="rw">
+        <div class="who"><span class="ic">${I.doc}</span><div><div class="nm">${esc(d.title || d.source_file || 'Untitled')}</div><div class="sz">v${esc(String(d.version || '1.0'))} · ${d.total_chunks || 0} chunks</div></div></div>
+        <div>${esc(d.department || '—')}</div>
+        <div>${esc(d.uploaded_by || '—')}</div>
+        <div><span class="tag ${ACCESS_PILL[d.access_level] || ''}">${esc(d.access_level || '—')}</span></div>
+        <div><span class="role-pill">${esc(d.status || '—')}</span></div>
+        <div style="display:flex;gap:.4rem">
+          <button class="btn btn-ghost" style="padding:.25rem .6rem;font-size:.78rem" onclick="openDoc('${esc(d.doc_id)}','')">Open</button>
+          <button class="btn btn-ghost" style="padding:.25rem .6rem;font-size:.78rem" onclick="removeDocument('${esc(d.doc_id)}', this)">Remove</button>
+        </div>
+      </div>`).join('')}
+    </div>`;
+}
+
+async function removeDocument(docId, btn) {
+  if (!confirm('Remove this document from the knowledge base? This deletes its text chunks and vectors and cannot be undone.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
+  try {
+    const r = await fetch(`${API}/api/admin/documents/${docId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${S.token}` } });
+    if (!r.ok) { alert('Could not remove document (error ' + r.status + ').'); if (btn) { btn.disabled = false; btn.textContent = 'Remove'; } return; }
+  } catch { alert('Cannot reach the server.'); if (btn) { btn.disabled = false; btn.textContent = 'Remove'; } return; }
+  loadDocuments();
+}
+
+/* ═══════════════════════════════════════════════════════════════════ COMMITTEE HEAD: MY SOPS */
+function mySopsHTML() {
+  return `
+  <div class="sec-head"><h3>Submit SOP${S.committeeName ? ` · ${esc(S.committeeName)}` : ''}</h3></div>
+  <div class="drop" onclick="document.getElementById('sopFile').click()">
+    <div class="ic">${I.upload.replace('viewBox="0 0 24 24"', 'viewBox="0 0 24 24" width="34" height="34"')}</div>
+    <div class="dt">Drop PDF, DOCX or DOC files, or click to upload</div>
+    <div class="ds">Submissions are reviewed by an Admin before joining the knowledge base.</div>
+  </div>
+  <input type="file" id="sopFile" accept=".pdf,.docx,.doc" multiple style="display:none" onchange="uploadCommitteeFile(event)">
+  <div class="sec-head" style="margin-top:1.5rem"><h3>My submissions</h3></div>
+  <div id="myUploadsList"><p style="color:var(--text-3);font-size:.88rem">Loading…</p></div>`;
+}
+
+async function uploadCommitteeFile(e) {
+  for (const f of e.target.files) {
+    try {
+      const fd = new FormData(); fd.append('file', f);
+      await fetch(`${API}/api/committee/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${S.token}` }, body: fd });
+    } catch {}
+  }
+  e.target.value = '';
+  loadMyUploads();
+}
+
+function statusTag(status, reason) {
+  if (status === 'approved') return `<span class="tag ok">Approved</span>`;
+  if (status === 'rejected') return `<span class="tag err" title="${esc(reason || '')}">Rejected${reason ? ' · ' + esc(reason) : ''}</span>`;
+  if (status === 'removed') return `<span class="tag err">Removed from knowledge base by admin</span>`;
+  return `<span class="tag" style="background:var(--surface-2);color:var(--text-3)">Pending review</span>`;
+}
+
+async function loadMyUploads() {
+  const el = $('myUploadsList'); if (!el) return;
+  let rows = [];
+  try {
+    const r = await fetch(`${API}/api/committee/my-uploads`, { headers: { 'Authorization': `Bearer ${S.token}` } });
+    if (r.ok) rows = await r.json();
+  } catch {}
+  if (!rows.length) { el.innerHTML = `<p style="color:var(--text-3);font-size:.88rem">No submissions yet.</p>`; return; }
+  el.innerHTML = rows.map(u => `
+    <div class="uprow">
+      <div class="l"><span class="ic">${I.doc}</span><div><div class="nm">${esc(u.original_filename)}</div><div class="sz">${new Date(u.submitted_at).toLocaleString()}</div></div></div>
+      ${statusTag(u.approval_status, u.rejection_reason)}
+    </div>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════════════ ADMIN: APPROVALS */
+function approvalsHTML() {
+  return `
+  <div class="sec-head"><h3>Pending SOP approvals</h3></div>
+  <div id="approvalsList"><p style="color:var(--text-3);font-size:.88rem">Loading…</p></div>`;
+}
+
+async function loadPendingApprovals() {
+  const el = $('approvalsList'); if (!el) return;
+  let rows = [];
+  try {
+    const r = await fetch(`${API}/api/admin/pending-approvals`, { headers: { 'Authorization': `Bearer ${S.token}` } });
+    if (r.ok) rows = await r.json();
+  } catch {}
+  if (!rows.length) { el.innerHTML = `<p style="color:var(--text-3);font-size:.88rem">Nothing pending review.</p>`; return; }
+  el.innerHTML = rows.map(u => `
+    <div class="uprow">
+      <div class="l"><span class="ic">${I.doc}</span><div><div class="nm">${esc(u.original_filename)}</div><div class="sz">${esc(u.uploaded_by)}${u.committee_name ? ' · ' + esc(u.committee_name) : ''} · ${new Date(u.submitted_at).toLocaleString()}</div></div></div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-ghost" style="padding:.3rem .7rem;font-size:.82rem" onclick="previewPendingUpload(${u.id})">Preview</button>
+        <button class="btn btn-accent" style="padding:.3rem .7rem;font-size:.82rem" onclick="approveUpload(${u.id})">Approve</button>
+        <button class="btn btn-ghost" style="padding:.3rem .7rem;font-size:.82rem" onclick="rejectUpload(${u.id})">Reject</button>
+      </div>
+    </div>`).join('');
+}
+
+async function previewPendingUpload(id) {
+  closeDoc();
+  const modal = document.createElement('div');
+  modal.id = 'docModal'; modal.className = 'doc-modal';
+  modal.innerHTML = `
+    <div class="doc-modal-card">
+      <div class="doc-modal-head">
+        <span class="doc-modal-title">${I.doc} Pending submission</span>
+        <div class="doc-modal-actions">
+          <button class="doc-dl" id="docDl">Download original</button>
+          <button class="doc-x" onclick="closeDoc()" title="Close">${I.x}</button>
+        </div>
+      </div>
+      <div class="doc-modal-body" id="docBody"><div class="doc-loading">Loading document…</div></div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeDoc(); });
+
+  const body = $('docBody');
+  try {
+    const r = await fetch(`${API}/api/admin/pending-approvals/${id}/preview`, {
+      headers: { 'Authorization': `Bearer ${S.token}` },
+    });
+    if (r.ok) {
+      const docHtml = await r.text();
+      const frame = document.createElement('iframe');
+      frame.className = 'doc-frame';
+      frame.setAttribute('sandbox', 'allow-same-origin allow-scripts');
+      frame.srcdoc = docHtml;
+      body.innerHTML = ''; body.appendChild(frame);
+    } else {
+      body.innerHTML = `<div class="doc-err">Could not load the submission (error ${r.status}).</div>`;
+    }
+  } catch {
+    if (body) body.innerHTML = `<div class="doc-err">Cannot reach the server.</div>`;
+  }
+  const dl = $('docDl'); if (dl) dl.onclick = () => downloadPendingUpload(id);
+}
+
+async function downloadPendingUpload(id) {
+  try {
+    const r = await fetch(`${API}/api/admin/pending-approvals/${id}/file`, {
+      headers: { 'Authorization': `Bearer ${S.token}` },
+    });
+    if (!r.ok) { alert('Could not download this submission (error ' + r.status + ').'); return; }
+    const blob = await r.blob();
+    const cd = r.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const name = m ? m[1] : 'document';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch {
+    alert('Cannot reach the server to download the submission.');
+  }
+}
+
+async function approveUpload(id) {
+  try {
+    const r = await fetch(`${API}/api/admin/approvals/${id}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${S.token}` } });
+    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || 'Approval failed.'); }
+  } catch { alert('Cannot reach the server.'); }
+  loadPendingApprovals();
+}
+
+async function rejectUpload(id) {
+  const reason = prompt('Reason for rejection:');
+  if (!reason || !reason.trim()) return;
+  try {
+    await fetch(`${API}/api/admin/approvals/${id}/reject`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${S.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+  } catch {}
+  loadPendingApprovals();
 }
 
 /* ═══════════════════════════════════════════════════════════════════ ADMIN: USERS */
@@ -521,10 +765,36 @@ async function loadUsers() {
   scroll.innerHTML = `<div class="view">
     <div class="sec-head"><h3>User directory</h3><span class="chip">${rows.length} accounts</span></div>
     <div class="utable">
-      <div class="hr"><div>User</div><div>Role</div><div>Status</div></div>
-      ${rows.map(u => `<div class="rw"><div class="who"><span class="av">${initials(u.username)}</span>${esc(u.username)}</div><div><span class="role-pill">${u.role}</span></div><div><span class="dotok">Active</span></div></div>`).join('')}
+      <div class="hr"><div>User</div><div>Role</div><div>Status</div><div>Committee Head</div></div>
+      ${rows.map(u => `<div class="rw"><div class="who"><span class="av">${initials(u.username)}</span>${esc(u.username)}</div><div><span class="role-pill">${u.role}</span></div><div><span class="dotok">Active</span></div><div>${committeeHeadCell(u)}</div></div>`).join('')}
     </div>
   </div>`;
+}
+
+function committeeHeadCell(u) {
+  if (u.role !== 'Student') return '<span style="color:var(--text-3)">—</span>';
+  if (u.is_committee_head) {
+    return `<span class="role-pill">${esc(u.committee_name || 'Committee Head')}</span>
+      <button class="btn btn-ghost" style="padding:.2rem .5rem;font-size:.78rem;margin-left:.4rem" onclick="setCommitteeHead(${u.id}, false)">Revoke</button>`;
+  }
+  return `<button class="btn btn-ghost" style="padding:.2rem .5rem;font-size:.78rem" onclick="setCommitteeHead(${u.id}, true)">Make Committee Head</button>`;
+}
+
+async function setCommitteeHead(userId, makeHead) {
+  let committee_name = null;
+  if (makeHead) {
+    committee_name = prompt('Committee name:');
+    if (!committee_name || !committee_name.trim()) return;
+    committee_name = committee_name.trim();
+  }
+  try {
+    await fetch(`${API}/api/admin/users/${userId}/committee-head`, {
+      method: 'PATCH',
+      headers: { 'Authorization': `Bearer ${S.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_committee_head: makeHead, committee_name }),
+    });
+  } catch {}
+  loadUsers();
 }
 
 /* ═══════════════════════════════════════════════════════════════════ HISTORY */
@@ -568,6 +838,7 @@ async function openConversation(id) {
       const rows = await r.json();
       S.messages = rows.map(m => ({
         content: m.content, isUser: m.is_user, sources: m.sources || [],
+        confidence: m.is_user ? "" : extractConfidence(m.content),
         time: new Date(m.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       }));
       S.sessionId = id; S.view = 'chat';
@@ -637,10 +908,22 @@ function closeDoc() { const m = $('docModal'); if (m) m.remove(); }
 async function downloadDoc(docId) {
   if (!S.token || !docId) return;
   try {
-    const r = await fetch(`${API}/api/documents/${docId}/file`, {
+    const r = await fetch(`${API}/api/documents/${docId}/download`, {
       headers: { 'Authorization': `Bearer ${S.token}` },
     });
-    if (!r.ok) return;
+    if (!r.ok) {
+      if (r.status === 404) {
+        try {
+          const errData = await r.json();
+          if (errData.status === 'missing') {
+            alert(errData.message || 'Original source document is not available.');
+            return;
+          }
+        } catch {}
+      }
+      alert('Could not download original document (error ' + r.status + ').');
+      return;
+    }
     const blob = await r.blob();
     const cd = r.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="?([^"]+)"?/);
@@ -649,7 +932,9 @@ async function downloadDoc(docId) {
     const a = document.createElement('a'); a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-  } catch {}
+  } catch {
+    alert('Cannot reach the server to download the document.');
+  }
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDoc(); });
@@ -657,7 +942,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDoc(); 
 /* ═══════════════════════════════════════════════════════════════════ */
 function logout() {
   closeDoc();
-  Object.assign(S, { user: null, role: null, token: null, isPublic: false, sessionId: null, view: 'home', messages: [], history: [], busy: false });
+  Object.assign(S, { user: null, role: null, token: null, isPublic: false, sessionId: null, view: 'home', messages: [], history: [], busy: false, isCommitteeHead: false, committeeName: null });
   renderLanding();
 }
 
@@ -669,13 +954,19 @@ function logout() {
    function referenced by an inline handler MUST appear here. */
 Object.assign(window, {
   // auth / landing
-  openLogin, closeLogin, enterGuest, fill, doLogin, logout, setApiUrl,
+  openLogin, closeLogin, enterGuest, fill, doLogin, doSignup, handleAuthSubmit, switchAuthMode, logout, setApiUrl,
   // navigation
   go, newChat, openConversation, deleteConversation,
   // chat
   sendMsg, quick,
-  // admin
-  uploadFiles,
+  // admin: documents
+  uploadFiles, loadDocuments, removeDocument,
+  // admin: users / committee heads
+  setCommitteeHead,
+  // committee head: my SOPs
+  uploadCommitteeFile,
+  // admin: approvals
+  approveUpload, rejectUpload, previewPendingUpload, downloadPendingUpload,
   // citation document viewer
   openDoc, closeDoc, downloadDoc,
 });

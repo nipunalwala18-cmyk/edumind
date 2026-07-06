@@ -39,8 +39,7 @@ def query(question: str, role: str) -> dict:
             answer:           str,
             answer_with_refs: str,
             source_documents: list[str],   # display names for frontend
-            citations:        list[dict],  # full citation metadata
-            confidence:       str,         # HIGH / MEDIUM / LOW / UNKNOWN
+            confidence:       str,         # e.g. "87%"
             confidence_score: float,
             retrieval_mode:   str,
             processing_time_ms: float,
@@ -80,7 +79,7 @@ def query(question: str, role: str) -> dict:
             "formatted_answer":   resp.formatted_answer,
             "source_documents":   source_documents,
             "citations":          citations_list,
-            "confidence":         resp.confidence.value,
+            "confidence":         resp.confidence,
             "confidence_score":   round(resp.confidence_score, 4),
             "retrieval_mode":     resp.retrieval_mode,
             "processing_time_ms": round(resp.processing_time_ms, 1),
@@ -100,7 +99,7 @@ def query(question: str, role: str) -> dict:
             "formatted_answer":   "The knowledge base is temporarily unavailable. Please try again shortly.",
             "source_documents":   [],
             "citations":          [],
-            "confidence":         "UNKNOWN",
+            "confidence":         "0%",
             "confidence_score":   0.0,
             "retrieval_mode":     "error",
             "processing_time_ms": 0.0,
@@ -148,7 +147,7 @@ def stream_structured(question: str, role: str) -> Iterator[tuple]:
             "answer":             "The knowledge base is temporarily unavailable. Please try again shortly.",
             "source_documents":   [],
             "citations":          [],
-            "confidence":         "UNKNOWN",
+            "confidence":         "0%",
             "confidence_score":   0.0,
             "retrieval_mode":     "error",
             "processing_time_ms": 0.0,

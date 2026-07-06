@@ -62,7 +62,7 @@ from typing import Iterator, Optional
 from pydantic import BaseModel, Field
 
 # Pure data-model imports -- no I/O, no model loading, no circular risk.
-from rag.prompt_schema import PromptConfig, PromptTemplate, ConfidenceLabel
+from rag.prompt_schema import PromptConfig, PromptTemplate
 from response_schema import (
     FALLBACK_ANSWER,
     RAGPipelineResponse,
@@ -104,19 +104,19 @@ class PipelineConfig(BaseModel):
 
     # ---- Retrieval ---------------------------------------------------------
     top_k_dense: int = Field(
-        default=25, ge=1, le=100,
+        default=10, ge=1, le=100,
         description="Dense candidates fetched from ChromaDB.",
     )
     top_k_bm25: int = Field(
-        default=25, ge=1, le=100,
+        default=10, ge=1, le=100,
         description="BM25 candidates fetched from SQLite.",
     )
     top_k_fusion: int = Field(
-        default=25, ge=1, le=100,
+        default=10, ge=1, le=100,
         description="Candidates entering the cross-encoder reranker after RRF.",
     )
     top_k_final: int = Field(
-        default=5, ge=1, le=50,
+        default=3, ge=1, le=50,
         description="Final results returned after reranking.",
     )
     use_bm25: bool = Field(
@@ -134,7 +134,7 @@ class PipelineConfig(BaseModel):
         description="System-prompt template variant.",
     )
     max_chunks: int = Field(
-        default=5, ge=1, le=20,
+        default=3, ge=1, le=20,
         description="Maximum context chunks passed to the LLM.",
     )
     max_context_chars: int = Field(
@@ -156,7 +156,7 @@ class PipelineConfig(BaseModel):
         description="Sampling temperature for Qwen2.5:7B.",
     )
     max_tokens: int = Field(
-        default=1024, ge=1, le=32768,
+        default=512, ge=1, le=32768,
         description="Maximum completion tokens (Ollama: num_predict).",
     )
     top_p: float = Field(
@@ -256,7 +256,7 @@ class RAGPipeline:
                 retrieval_time_ms    = round(retrieval_time_ms, 2),
                 generation_time_ms   = 0.0,
                 total_tokens         = 0,
-                confidence           = ConfidenceLabel.LOW,
+                confidence           = "0%",
                 confidence_score     = 0.0,
                 retrieval_mode       = retrieval_response.retrieval_mode,
                 model_name           = "",
@@ -281,10 +281,24 @@ class RAGPipeline:
 
         # ---- Phase 4: Citation Engine -----------------------------------
         from rag.citation_engine import get_citation_engine
-        citation_list = get_citation_engine().build(results, rag_response.answer)
+        confidence, conf_score = compute_confidence(results)
+        
+        import re
+        pattern = r"[\r\n]*(?:\[|\*\*)\s*Confidence:\s*[^\]\n\r\*]+(?:\]|\*\*)*(?:.*)?"
+        cleaned_answer = re.sub(pattern, "", rag_response.answer, flags=re.IGNORECASE).strip()
+        
+        pct = round(conf_score * 100)
+        if conf_score >= 0.70:
+            desc = "the information provided in the sources directly and completely answers the question."
+        elif conf_score >= 0.40:
+            desc = "the information provided in the sources partially answers the question and requires inference for a complete process."
+        else:
+            desc = "the information provided in the sources is only tangentially related to the question."
+            
+        final_answer_text = cleaned_answer + f"\n\n**Confidence: {pct}%** — {desc}"
+        citation_list = get_citation_engine().build(results, final_answer_text)
 
         # ---- Assemble structured response --------------------------------
-        confidence, conf_score = compute_confidence(results)
         sources_block          = format_sources_block(citation_list.citations)
         formatted_answer       = citation_list.answer_with_refs + sources_block
 
@@ -399,7 +413,7 @@ class RAGPipeline:
                 "answer":             FALLBACK_ANSWER,
                 "source_documents":   [],
                 "citations":          [],
-                "confidence":         ConfidenceLabel.LOW.value,
+                "confidence":         "0%",
                 "confidence_score":   0.0,
                 "retrieval_mode":     retrieval_response.retrieval_mode,
                 "processing_time_ms": round(wall_ms, 2),
@@ -451,7 +465,7 @@ class RAGPipeline:
             "answer":             full_answer,
             "source_documents":   [c.display_name for c in citation_list.citations],
             "citations":          citations_payload,
-            "confidence":         confidence.value,
+            "confidence":         confidence,
             "confidence_score":   round(conf_score, 4),
             "retrieval_mode":     retrieval_response.retrieval_mode,
             "processing_time_ms": round(wall_ms, 2),

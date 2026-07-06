@@ -34,6 +34,31 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+# ---------------------------------------------------------------------------
+# Global indexing status
+# ---------------------------------------------------------------------------
+# Ingestion (extract → chunk → embed → index) runs synchronously inside the
+# request that triggered it, but FastAPI serves other requests concurrently via
+# its threadpool. This shared flag lets any client (including guests) poll
+# GET /api/indexing-status and show a "knowledge base updating" banner while a
+# document is being processed.
+import threading
+
+_indexing_lock = threading.Lock()
+_indexing_state: dict = {"active": False, "filename": None, "started_at": None}
+
+
+def get_indexing_state() -> dict:
+    with _indexing_lock:
+        return dict(_indexing_state)
+
+
+def _set_indexing(active: bool, filename: Optional[str] = None) -> None:
+    with _indexing_lock:
+        _indexing_state["active"] = active
+        _indexing_state["filename"] = filename if active else None
+        _indexing_state["started_at"] = datetime.utcnow().isoformat() if active else None
+
 STAGING_DIR = Path(_PROJECT_ROOT) / "data" / "staging"
 # Admin-uploadable formats. Text extraction for each is handled by the shared
 # ingestion pipeline (ingestion_pipeline.ingest_document); chunking, embedding,
@@ -67,7 +92,12 @@ class IngestionResult:
 # Main ingestion entry point
 # ---------------------------------------------------------------------------
 
-def ingest_uploaded_file(filename: str, content_bytes: bytes) -> IngestionResult:
+def ingest_uploaded_file(
+    filename: str,
+    content_bytes: bytes,
+    forced_access_level: Optional[str] = None,
+    uploaded_by: Optional[str] = None,
+) -> IngestionResult:
     """
     Full pipeline for an admin-uploaded document:
       1. Validate file type
@@ -77,10 +107,35 @@ def ingest_uploaded_file(filename: str, content_bytes: bytes) -> IngestionResult
       5. Phase 3: chunk (already called by ingestion_pipeline.ingest_document)
       6. Phase 4+5: embed + index to ChromaDB
 
+    Args:
+        forced_access_level: if provided, overrides the content-heuristic
+            access_level detected during ingestion (e.g. "Student" for
+            committee-head SOP submissions approved by an admin).
+        uploaded_by: username to record as the document's contributor (the
+            admin uploader, or the committee head whose submission was approved).
+
     Returns IngestionResult with full status.
     """
     import time
     t_start = time.perf_counter()
+    _set_indexing(True, filename)
+    try:
+        return _ingest_uploaded_file_inner(
+            filename, content_bytes, forced_access_level, uploaded_by, t_start
+        )
+    finally:
+        _set_indexing(False)
+
+
+def _ingest_uploaded_file_inner(
+    filename: str,
+    content_bytes: bytes,
+    forced_access_level: Optional[str],
+    uploaded_by: Optional[str],
+    t_start: float,
+) -> IngestionResult:
+
+    import time
 
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -151,6 +206,13 @@ def ingest_uploaded_file(filename: str, content_bytes: bytes) -> IngestionResult
             return IngestionResult(filename=filename, status="failed", error=error_msg)
 
         doc_record, cleaned_text = result
+
+        if forced_access_level:
+            from chunk_schema import AccessLevel
+            doc_record.access_level = AccessLevel(forced_access_level)
+            import ledger as _ledger
+            _ledger.upsert_document(doc_record.to_ledger_dict())
+
         # Run chunking
         all_chunks = run_chunking([doc_record], {doc_record.doc_id: cleaned_text})
         chunks_for_doc = all_chunks.get(doc_record.doc_id, [])
@@ -171,6 +233,14 @@ def ingest_uploaded_file(filename: str, content_bytes: bytes) -> IngestionResult
     except Exception as exc:
         logger.error("[DOC_MANAGER] Phase 4/5 failed for '%s': %s", filename, exc, exc_info=True)
         # Non-fatal — doc is ingested and chunked, just not yet vectorized
+
+    # --- Record contributor for the admin document registry ---
+    if uploaded_by:
+        try:
+            import ledger as _ledger
+            _ledger.set_document_uploader(doc_record.doc_id, uploaded_by)
+        except Exception as exc:
+            logger.warning("[DOC_MANAGER] Could not set uploader for '%s': %s", filename, exc)
 
     elapsed_ms = (time.perf_counter() - t_start) * 1000
     superseded = summary.total_docs_superseded > 0
@@ -252,6 +322,23 @@ def get_ingestion_logs(limit: int = 50) -> list[dict]:
     except Exception as exc:
         logger.error("[DOC_MANAGER] get_ingestion_logs failed: %s", exc)
         return []
+
+
+def delete_document(doc_id: str) -> dict:
+    """Removes a document from ChromaDB and the ledger (document + chunks).
+    Returns {removed: bool, vectors_removed: int}."""
+    vectors_removed = 0
+    try:
+        from vector_store.chroma_store import get_chroma_store
+        store = get_chroma_store()
+        vectors_removed = store.delete_by_doc_id(doc_id) or 0
+    except Exception as exc:
+        logger.warning("[DOC_MANAGER] Chroma delete failed for %s: %s", doc_id, exc)
+
+    import ledger
+    removed = ledger.delete_document(doc_id)
+    logger.info("[DOC_MANAGER] Deleted doc %s (ledger=%s, vectors=%s)", doc_id[:12], removed, vectors_removed)
+    return {"removed": removed, "vectors_removed": vectors_removed}
 
 
 def get_chroma_vector_count() -> int:

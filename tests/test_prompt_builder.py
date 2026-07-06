@@ -17,11 +17,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from rag.prompt_schema import (
     BuiltPrompt,
-    ConfidenceLabel,
+    PromptTemplate,
+    PromptConfig,
     ContextChunk,
     ConflictGroup,
-    PromptConfig,
-    PromptTemplate,
     confidence_from_score,
 )
 from rag.prompt_builder import PromptBuilder, _version_key, build_prompt
@@ -107,22 +106,22 @@ def default_config() -> PromptConfig:
 
 class TestConfidenceFromScore:
     def test_none_returns_unknown(self):
-        assert confidence_from_score(None) == ConfidenceLabel.UNKNOWN
+        assert confidence_from_score(None) == "0%"
 
     def test_high_threshold(self):
-        assert confidence_from_score(0.70) == ConfidenceLabel.HIGH
-        assert confidence_from_score(1.00) == ConfidenceLabel.HIGH
-        assert confidence_from_score(0.71) == ConfidenceLabel.HIGH
+        assert confidence_from_score(0.70) == "70%"
+        assert confidence_from_score(1.00) == "100%"
+        assert confidence_from_score(0.71) == "71%"
 
     def test_medium_threshold(self):
-        assert confidence_from_score(0.40) == ConfidenceLabel.MEDIUM
-        assert confidence_from_score(0.55) == ConfidenceLabel.MEDIUM
-        assert confidence_from_score(0.69) == ConfidenceLabel.MEDIUM
+        assert confidence_from_score(0.40) == "40%"
+        assert confidence_from_score(0.55) == "55%"
+        assert confidence_from_score(0.69) == "69%"
 
     def test_low_threshold(self):
-        assert confidence_from_score(0.00) == ConfidenceLabel.LOW
-        assert confidence_from_score(0.20) == ConfidenceLabel.LOW
-        assert confidence_from_score(0.39) == ConfidenceLabel.LOW
+        assert confidence_from_score(0.00) == "0%"
+        assert confidence_from_score(0.20) == "20%"
+        assert confidence_from_score(0.39) == "39%"
 
 
 # ===========================================================================
@@ -166,7 +165,7 @@ class TestContextChunkToPromptBlock:
             rank             = 1,
             score            = 0.90,
             rerank_score     = 0.92,
-            confidence       = ConfidenceLabel.HIGH,
+            confidence       = "92%",
         )
 
     def test_header_contains_source_number(self, chunk):
@@ -180,7 +179,7 @@ class TestContextChunkToPromptBlock:
     def test_metadata_row_included_by_default(self, chunk):
         block = chunk.to_prompt_block(include_metadata=True)
         assert "Finance" in block
-        assert "Confidence: High" in block
+        assert "Confidence: 92%" in block
 
     def test_metadata_row_excluded(self, chunk):
         block = chunk.to_prompt_block(include_metadata=False)
@@ -319,13 +318,13 @@ class TestPrepareChunks:
     def test_rerank_score_used_for_confidence(self, builder, default_config):
         results = [_make_retrieval_result(rerank_score=0.95)]
         chunks, _ = builder._prepare_chunks(results, default_config)
-        assert chunks[0].confidence == ConfidenceLabel.HIGH
+        assert chunks[0].confidence == "95%"
 
     def test_score_fallback_when_no_rerank(self, builder, default_config):
         r = _make_retrieval_result(score=0.45, rerank_score=None)
         r.rerank_score = None
         chunks, _ = builder._prepare_chunks([r], default_config)
-        assert chunks[0].confidence == ConfidenceLabel.MEDIUM
+        assert chunks[0].confidence == "45%"
 
     def test_empty_results_returns_empty(self, builder, default_config):
         chunks, dropped = builder._prepare_chunks([], default_config)

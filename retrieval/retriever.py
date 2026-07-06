@@ -94,6 +94,11 @@ class QueryPreprocessor:
     def preprocess(self, text: str, remove_stopwords: bool = False) -> str:
         text = _CONTROL_CHAR_RE.sub(" ", text)
         text = _WHITESPACE_RE.sub(" ", text).strip().lower()
+
+        # Split common run-on typos with 'the' followed by keyword
+        for term in ["attendance", "admission", "scholarship", "examination", "library", "budget", "finance", "academics", "placement", "alumni", "fees", "billing", "mms"]:
+            text = text.replace(f"the{term}", f"the {term}")
+
         if remove_stopwords:
             tokens = text.split()
             if len(tokens) > 5:
@@ -239,7 +244,7 @@ class Retriever:
             mode = "dense"
 
         # --- 9. Build typed results ---
-        results = self._build_results(candidate_pool, mode)
+        results = self._build_results(candidate_pool[:query.top_k], mode)
 
         latency_ms = (time.perf_counter() - t_start) * 1000
         logger.info(
@@ -308,6 +313,10 @@ class Retriever:
         results: list[RetrievalResult] = []
         for rank, r in enumerate(raw, start=1):
             citation = _build_citation(r.metadata)
+            logger.info(
+                f"[RETRIEVAL] [CHUNK] rank={rank} doc_id={r.metadata.get('doc_id')} "
+                f"chunk_id={r.chunk_id} filepath={r.metadata.get('source_file')} score={r.score:.4f}"
+            )
             results.append(
                 RetrievalResult(
                     rank           = rank,
