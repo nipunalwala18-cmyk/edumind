@@ -170,7 +170,8 @@ body::before {
 
 .modal-card { background: var(--surface); border: 1px solid var(--border-2);
     border-radius: var(--radius-lg); padding: 2.6rem; width: 100%; max-width: 420px;
-    position: relative; box-shadow: var(--shadow); animation: rise 0.32s cubic-bezier(0.16,1,0.3,1); }
+    position: relative; box-shadow: var(--shadow); animation: rise 0.32s cubic-bezier(0.16,1,0.3,1);
+    max-height: calc(100vh - 3rem); overflow-y: auto; }
 @keyframes rise { from { opacity: 0; transform: translateY(24px) scale(0.98); } to { opacity: 1; transform: none; } }
 
 .modal-card .x { position: absolute; top: 1.3rem; right: 1.3rem; width: 32px; height: 32px;
