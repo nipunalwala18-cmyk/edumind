@@ -2,21 +2,16 @@
    EduMind — front-end app logic
    ═══════════════════════════════════════════════════════════════════ */
 let API = localStorage.getItem('EDUMIND_API_URL');
-if (!API) {
+if (API === null) {
   API = window.location.origin;
 }
 
 function setApiUrl(val) {
   const cleanVal = val.trim();
-  if (cleanVal) {
-    localStorage.setItem('EDUMIND_API_URL', cleanVal);
-    API = cleanVal;
-  } else {
-    localStorage.removeItem('EDUMIND_API_URL');
-    API = window.location.origin;
-  }
-  if (document.getElementById('landingApiUrl')) document.getElementById('landingApiUrl').value = API;
-  if (document.getElementById('apiUrl')) document.getElementById('apiUrl').value = API;
+  localStorage.setItem('EDUMIND_API_URL', cleanVal);
+  API = cleanVal;
+  if (document.getElementById('landingApiUrl')) document.getElementById('landingApiUrl').value = cleanVal;
+  if (document.getElementById('apiUrl')) document.getElementById('apiUrl').value = cleanVal;
 }
 
 const S = {
