@@ -278,7 +278,7 @@ def run_assessment():
     # 4. Text Inspection & Ingestion Ledger Write
     print("Reading staging files and analyzing content structure...")
     for file in os.listdir(STAGING_DIR):
-        if not file.endswith(".docx"):
+        if not file.lower().endswith(".docx"):
             continue
             
         staging_filepath = os.path.join(STAGING_DIR, file)

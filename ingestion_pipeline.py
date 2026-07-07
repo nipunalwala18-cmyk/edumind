@@ -24,7 +24,7 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -147,7 +147,7 @@ def _extract_date(filepath: str, paragraphs: list[str]) -> str:
         mtime = os.path.getmtime(filepath)
         return datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
     except Exception:
-        return datetime.utcnow().strftime("%Y-%m-%d")
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 
 def _extract_category(filename: str, paragraphs: list[str]) -> DocumentCategory:
@@ -499,7 +499,7 @@ def load_staging_documents() -> list[str]:
     return sorted(
         os.path.join(STAGING_DIR, f)
         for f in os.listdir(STAGING_DIR)
-        if f.endswith(".docx") and not f.startswith("~$")
+        if f.lower().endswith(".docx") and not f.startswith("~$")
     )
 
 
@@ -611,10 +611,10 @@ def run_ingestion(staging_dir: Optional[str] = None) -> IngestionSummary:
     """
     ledger.initialize_db()
 
-    run_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     summary = IngestionSummary(
         run_id     = run_id,
-        started_at = datetime.utcnow().isoformat(),
+        started_at = datetime.now(timezone.utc).isoformat(),
     )
 
     # --- Discover staged files ---
@@ -622,7 +622,7 @@ def run_ingestion(staging_dir: Optional[str] = None) -> IngestionSummary:
     files = sorted(
         os.path.join(staging_path, f)
         for f in os.listdir(staging_path)
-        if f.endswith(".docx") and not f.startswith("~$")
+        if f.lower().endswith(".docx") and not f.startswith("~$")
     )
     summary.total_docs_discovered = len(files)
     logger.info(f"[INGESTION] Run {run_id}: Found {len(files)} staged documents.")
@@ -646,7 +646,7 @@ def run_ingestion(staging_dir: Optional[str] = None) -> IngestionSummary:
     else:
         all_chunks = {}
 
-    summary.completed_at = datetime.utcnow().isoformat()
+    summary.completed_at = datetime.now(timezone.utc).isoformat()
 
     # --- Print summary ---
     print(summary.report())
