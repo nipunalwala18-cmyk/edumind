@@ -124,7 +124,7 @@ function renderLanding() {
         <button class="btn btn-outline btn-lg" onclick="openLogin()">Sign in for more</button>
         <span class="hero-note">${I.lock} No account needed to browse</span>
       </div>
-      <div class="api-config-strip" style="margin-top: 1.5rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-3); z-index: 10; position: relative;">
+      <div class="api-config-strip" style="margin-top: 1.5rem; display: none; align-items: center; justify-content: center; gap: 0.5rem; font-size: 0.8rem; color: var(--text-3); z-index: 10; position: relative;">
         <span>API Endpoint:</span>
         <input id="landingApiUrl" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 0.25rem 0.5rem; color: var(--text-2); font-family: monospace; font-size: 0.75rem; width: 220px;" placeholder="http://localhost:8000" value="${API || ''}" onchange="setApiUrl(this.value)">
       </div>
@@ -180,7 +180,7 @@ function authModalHTML() {
         <option value="" disabled selected>Select department…</option>
         ${DEPARTMENTS.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join('')}
       </select></div>` : ''}
-      <div class="field"><label>API Endpoint</label><input id="apiUrl" placeholder="http://localhost:8000" value="${API || ''}" autocomplete="off" onchange="setApiUrl(this.value)"></div>
+      <div class="field" style="display: none;"><label>API Endpoint</label><input id="apiUrl" placeholder="http://localhost:8000" value="${API || ''}" autocomplete="off" onchange="setApiUrl(this.value)"></div>
       <button type="submit" class="modal-submit">${isSignup ? 'Create account' : 'Continue'}</button>
     </form>
     <p class="auth-switch">
