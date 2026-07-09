@@ -37,18 +37,19 @@ Retrieval is hybrid on purpose: dense embeddings catch paraphrased questions, BM
 
 ## Stack
 
- Layer & Tech 
+| Layer                   | Technology                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| **Backend**             | FastAPI                                                                            |
+| **Frontend**            | Vanilla HTML/CSS/JavaScript (single-page application served from `/frontend`)      |
+| **Vector Store**        | ChromaDB                                                                           |
+| **Embeddings**          | `BAAI/bge-base-en-v1.5`                                                            |
+| **Reranker**            | `BAAI/bge-reranker-base`                                                           |
+| **LLM**                 | `Qwen2.5:7B` via Ollama (default), with support for the Hugging Face Inference API |
+| **Agent Orchestration** | LangGraph                                                                          |
+| **Authentication**      | JWT + bcrypt                                                                       |
+| **Database**            | SQLite (users, chat history, ingestion ledger)                                     |
+| **Testing**             | pytest (500+ tests covering ingestion, retrieval, generation, and authentication)  |
 
-| Backend | FastAPI |
-| Frontend | Vanilla HTML/CSS/JS — no framework, just a single-page app served straight off `/frontend` |
-| Vector store | ChromaDB |
-| Embeddings | BAAI/bge-base-en-v1.5 |
-| Reranker | BAAI/bge-reranker-base |
-| LLM | Qwen2.5:7B via Ollama by default; swappable for the HuggingFace Inference API |
-| Agent orchestration | LangGraph |
-| Auth | JWT + bcrypt |
-| DB | SQLite (users, chat history, ingestion ledger) |
-| Tests | pytest (500+ tests across ingestion, retrieval, generation, auth) |
 
 ## Getting started
 
