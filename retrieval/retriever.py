@@ -276,7 +276,7 @@ class Retriever:
         version:          Optional[str]  = None,
         remove_stopwords: bool           = False,
         use_bm25:         bool           = True,
-        use_reranker:     bool           = True,
+        use_reranker:     bool           = False,
         top_k_dense:      int            = 25,
         top_k_bm25:       int            = 25,
         top_k_fusion:     int            = 25,

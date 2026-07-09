@@ -67,6 +67,7 @@ from response_schema import (
     FALLBACK_ANSWER,
     RAGPipelineResponse,
     compute_confidence,
+    parse_llm_confidence,
     format_sources_block,
 )
 
@@ -124,7 +125,7 @@ class PipelineConfig(BaseModel):
         description="Enable BM25 keyword retrieval alongside dense retrieval.",
     )
     use_reranker: bool = Field(
-        default=True,
+        default=False,
         description="Enable cross-encoder reranking of fused candidates.",
     )
 
@@ -281,7 +282,7 @@ class RAGPipeline:
 
         # ---- Phase 4: Citation Engine -----------------------------------
         from rag.citation_engine import get_citation_engine
-        confidence, conf_score = compute_confidence(results)
+        confidence, conf_score = parse_llm_confidence(rag_response.answer, results)
         
         import re
         pattern = r"[\r\n]*(?:\[|\*\*)\s*Confidence:\s*[^\]\n\r\*]+(?:\]|\*\*)*(?:.*)?"
@@ -442,7 +443,7 @@ class RAGPipeline:
         # ---- Citations + confidence from the complete answer -----------
         from rag.citation_engine import get_citation_engine
         citation_list          = get_citation_engine().build(results, full_answer)
-        confidence, conf_score = compute_confidence(results)
+        confidence, conf_score = parse_llm_confidence(full_answer, results)
         wall_ms                = (time.perf_counter() - t_wall_start) * 1000
 
         citations_payload = [

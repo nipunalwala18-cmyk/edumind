@@ -85,7 +85,7 @@ class IndexingRunSummary:
 
 def run_indexing(
     doc_id: Optional[str] = None,
-    batch_size: int = 32,
+    batch_size: int = 100,
 ) -> IndexingRunSummary:
     """
     Phase 4 + Phase 5 combined orchestrator.

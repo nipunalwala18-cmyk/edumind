@@ -23,7 +23,14 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import Optional
+import time
+from typing import Optional, Union
+
+from dotenv import load_dotenv
+import httpx
+
+# Load environment variables at module initialization time
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_NAME    = "BAAI/bge-base-en-v1.5"
 EMBEDDING_DIM = 768
-BATCH_SIZE    = 32       # Safe default for CPU (4-8 GB RAM). Increase to 64 with GPU.
+BATCH_SIZE    = 100      # Maximized to 100 for cloud API batchEmbedContents limit.
 NORMALIZE     = True     # Mandatory for cosine similarity correctness in ChromaDB.
 MAX_SEQ_LEN   = 512      # BGE-base hard token limit.
 
@@ -46,18 +53,22 @@ QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 # Singleton
 # ---------------------------------------------------------------------------
 
-_embedder_instance: Optional["BGEEmbedder"] = None
+_embedder_instance: Optional[Union[BGEEmbedder, GeminiEmbedder]] = None
 
 
-def get_embedder() -> "BGEEmbedder":
+def get_embedder() -> Union[BGEEmbedder, GeminiEmbedder]:
     """
-    Returns the process-level BGEEmbedder singleton.
-    Loads the model on first call; subsequent calls return the cached instance.
-    Use this function everywhere — never instantiate BGEEmbedder directly.
+    Returns the process-level BGEEmbedder or GeminiEmbedder singleton.
+    Loads the model/API on first call; subsequent calls return the cached instance.
+    Use this function everywhere — never instantiate embedder classes directly.
     """
     global _embedder_instance
     if _embedder_instance is None:
-        _embedder_instance = BGEEmbedder()
+        backend = os.environ.get("EMBEDDING_BACKEND", "local").strip().lower()
+        if backend == "gemini":
+            _embedder_instance = GeminiEmbedder()
+        else:
+            _embedder_instance = BGEEmbedder()
     if not _embedder_instance.is_loaded:
         _embedder_instance.load()
     return _embedder_instance
@@ -223,3 +234,123 @@ class BGEEmbedder:
             raise RuntimeError(
                 "[EMBEDDER] Model not loaded. Call load() or use get_embedder()."
             )
+
+
+# ---------------------------------------------------------------------------
+# GeminiEmbedder
+# ---------------------------------------------------------------------------
+
+class GeminiEmbedder:
+    """
+    Wraps the Google Gemini embedding-2 API.
+    """
+
+    def __init__(self) -> None:
+        self.api_key = os.environ.get("GEMINI_API_KEY", "")
+        self._model_name = "models/gemini-embedding-2"
+        self._device = "cloud"
+        self._is_loaded = False
+
+    def load(self) -> None:
+        if not self.api_key:
+            logger.warning("[EMBEDDER] GEMINI_API_KEY is not set. Cloud embedding requests will fail.")
+        self._is_loaded = True
+        logger.info(f"[EMBEDDER] GeminiEmbedder initialized using {self._model_name} (cloud).")
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._is_loaded
+
+    @property
+    def embedding_dim(self) -> int:
+        return 768
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    @property
+    def device(self) -> str:
+        return self._device
+
+    def embed_documents(
+        self,
+        texts: list[str],
+        batch_size: int = BATCH_SIZE,
+        show_progress: bool = True,
+    ) -> list[list[float]]:
+        if not texts:
+            return []
+
+        url = f"https://generativelanguage.googleapis.com/v1/{self._model_name}:batchEmbedContents?key={self.api_key}"
+        embeddings: list[list[float]] = []
+        total = len(texts)
+
+        for start in range(0, total, batch_size):
+            batch = texts[start : start + batch_size]
+            requests = [
+                {
+                    "model": self._model_name,
+                    "taskType": "RETRIEVAL_DOCUMENT",
+                    "content": {"parts": [{"text": text}]},
+                    "outputDimensionality": 768
+                }
+                for text in batch
+            ]
+
+            payload = {"requests": requests}
+            max_attempts = 6
+            attempt_delay = 5.0
+            for attempt in range(max_attempts):
+                try:
+                    with httpx.Client(timeout=60.0) as client:
+                        response = client.post(url, json=payload)
+                        if response.status_code == 429:
+                            logger.warning(
+                                f"[EMBEDDER] Rate limited (429) on batch {start // batch_size + 1}. "
+                                f"Retrying in {attempt_delay}s... (attempt {attempt + 1}/{max_attempts})"
+                            )
+                            time.sleep(attempt_delay)
+                            attempt_delay *= 2
+                            continue
+                        if response.status_code != 200:
+                            raise RuntimeError(f"Gemini Embedding API error: {response.text}")
+                        data = response.json()
+                        for emb in data.get("embeddings", []):
+                            embeddings.append(emb["values"])
+                        break
+                except Exception as e:
+                    if attempt == max_attempts - 1:
+                        logger.error(f"[EMBEDDER] Failed to embed batch: {e}")
+                        raise
+                    time.sleep(attempt_delay)
+                    attempt_delay *= 2
+
+            # Small safety delay between successful batches
+            time.sleep(1.0)
+
+            if show_progress:
+                done = min(start + batch_size, total)
+                logger.info(f"[EMBEDDER] Embedded {done}/{total} documents via Gemini API.")
+
+        return embeddings
+
+    def embed_query(self, query: str) -> list[float]:
+        url = f"https://generativelanguage.googleapis.com/v1/{self._model_name}:embedContent?key={self.api_key}"
+        payload = {
+            "model": self._model_name,
+            "taskType": "RETRIEVAL_QUERY",
+            "content": {"parts": [{"text": query.strip()}]},
+            "outputDimensionality": 768
+        }
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(url, json=payload)
+                if response.status_code != 200:
+                    raise RuntimeError(f"Gemini Embedding API error: {response.text}")
+                data = response.json()
+                return data["embedding"]["values"]
+        except Exception as e:
+            logger.error(f"[EMBEDDER] Failed to embed query: {e}")
+            raise
+

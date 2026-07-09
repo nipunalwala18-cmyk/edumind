@@ -231,6 +231,14 @@ def get_rag_engine(
                 from rag.hf_client import get_hf_client
                 logger.info("[RAG_ENGINE] Using HuggingFace backend (LLM_BACKEND=hf)")
                 _engine_instance = RAGEngine(get_hf_client())
+            elif backend == "gemini":
+                from rag.gemini_client import get_gemini_client
+                logger.info("[RAG_ENGINE] Using Gemini backend (LLM_BACKEND=gemini)")
+                _engine_instance = RAGEngine(get_gemini_client())
+            elif backend == "groq":
+                from rag.groq_client import get_groq_client
+                logger.info("[RAG_ENGINE] Using Groq backend (LLM_BACKEND=groq)")
+                _engine_instance = RAGEngine(get_groq_client())
             else:
                 logger.info("[RAG_ENGINE] Using Ollama backend (LLM_BACKEND=ollama)")
                 _engine_instance = RAGEngine(

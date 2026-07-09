@@ -61,14 +61,37 @@ def compute_confidence(
         return "0%", 0.0
 
     best = results[0]
-    raw_confidence_score: float = (
-        best.rerank_score
-        if best.rerank_score is not None
-        else best.score
-    )
-    raw_confidence_score = max(0.0, min(1.0, raw_confidence_score))
+    # Cosine similarity is 1.0 - distance
+    similarity = 1.0 - best.distance
+    
+    # Threshold check: if similarity is below 70%, the retrieved context is irrelevant
+    if similarity < 0.70:
+        return "0%", 0.0
+
+    raw_confidence_score = max(0.0, min(1.0, similarity))
     confidence_percentage = round(raw_confidence_score * 100)
     return f"{confidence_percentage}%", raw_confidence_score
+
+
+def parse_llm_confidence(
+    answer: str,
+    results: "list[RetrievalResult]",
+) -> tuple[str, float]:
+    """
+    Extracts the self-assessed confidence score from the LLM response text if present.
+    Falls back to retrieval similarity (compute_confidence) if not found.
+    """
+    if not answer:
+        return compute_confidence(results)
+
+    import re
+    # Matches [Confidence: 80%] or **Confidence: 80%** or Confidence: 80%
+    match = re.search(r"(?:\[|\*\*)\s*Confidence:\s*(\d+)%\s*(?:\]|\*\*)", answer, re.IGNORECASE)
+    if match:
+        pct = int(match.group(1))
+        return f"{pct}%", float(pct) / 100.0
+
+    return compute_confidence(results)
 
 
 # ---------------------------------------------------------------------------
