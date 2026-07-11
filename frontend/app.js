@@ -94,6 +94,20 @@ const ORB = `<svg class="orb" viewBox="0 0 520 520" fill="none" xmlns="http://ww
 
 const $ = (id) => document.getElementById(id);
 const esc = (t) => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+
+/* Bot answers come back as markdown (the LLM prompt asks for **bold**,
+   numbered lists, etc.) but the bubble was rendering it as plain escaped
+   text, so markers showed up literally instead of being formatted. Escape
+   first for safety, then convert the small set of markdown the answers
+   actually use — bold before italic, so consumed "**" pairs can't leave
+   behind stray "*" that get misread as italic markers. Line breaks are
+   already preserved by .bubble's white-space: pre-wrap. */
+const formatMarkdown = (t) => {
+  let out = esc(t);
+  out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  return out;
+};
 const now = () => new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 const initials = (n) => n.replace(/_/g, ' ').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 const extractConfidence = (content) => {
@@ -486,7 +500,7 @@ function msgHTML(msg) {
   <div class="msg ${msg.isUser ? 'me' : 'bot'}">
     <div class="av ${msg.isUser ? 'me' : 'bot'}">${msg.isUser ? (S.isPublic ? 'G' : initials(S.user)) : I.spark}</div>
     <div class="body">
-      <div class="bubble">${esc(msg.content)}</div>
+      <div class="bubble">${msg.isUser ? esc(msg.content) : formatMarkdown(msg.content)}</div>
       <div class="msg-meta" style="display: flex; align-items: center; gap: 1rem; margin-top: 0.35rem; font-size: 0.75rem; color: var(--text-3);">
         <div class="time">${msg.time || now()}</div>
         ${confidenceBadge}
@@ -525,9 +539,10 @@ async function sendMsg() {
   const liveUpdate = () => {
     const bubbles = document.querySelectorAll('.msg.bot .bubble');
     const el = bubbles[bubbles.length - 1];
-    // textContent keeps everything escaped (no raw HTML) while .bubble's
-    // white-space:pre-wrap preserves the answer's line breaks.
-    if (el) { el.textContent = S.messages[botIdx].content; const mm = $('msgs'); if (mm) mm.scrollTop = mm.scrollHeight; }
+    // formatMarkdown() escapes first, so this is still XSS-safe — it just
+    // additionally renders **bold**/*italic* live instead of only once
+    // streaming finishes and mountChat() re-renders the settled message.
+    if (el) { el.innerHTML = formatMarkdown(S.messages[botIdx].content); const mm = $('msgs'); if (mm) mm.scrollTop = mm.scrollHeight; }
   };
 
   try {
