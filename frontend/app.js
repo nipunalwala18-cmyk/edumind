@@ -968,7 +968,10 @@ async function openConversation(id) {
 
 async function deleteConversation(id, ev) {
   ev.stopPropagation();
-  try { await fetch(`${API}/api/history/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${S.token}` } }); } catch {}
+  try {
+    const r = await fetch(`${API}/api/history/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${S.token}` } });
+    if (!r.ok) { alert('Could not delete conversation (error ' + r.status + ').'); return; }
+  } catch { alert('Cannot reach the server. The conversation was not deleted.'); return; }
   if (S.sessionId === id) { S.messages = []; S.sessionId = null; if (S.view === 'chat') mountChat(); }
   await loadHistory(); renderHistory();
 }
