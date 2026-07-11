@@ -70,9 +70,20 @@ def get_db():
 
 def _ensure_column(cursor, table: str, column: str, definition: str) -> None:
     """Adds a column to an existing table if it is not already present."""
-    cursor.execute(f"PRAGMA table_info({table})")
-    existing = {row[1] for row in cursor.fetchall()}
-    if column not in existing:
+    if engine.dialect.name == "postgresql":
+        cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+            (table.lower(),)
+        )
+        existing = {row[0].lower() for row in cursor.fetchall()}
+    else:
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        
+    if column.lower() not in existing:
+        if engine.dialect.name == "postgresql":
+            if "DEFAULT 0" in definition.upper() and "BOOLEAN" in definition.upper():
+                definition = definition.replace("DEFAULT 0", "DEFAULT FALSE")
         cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
