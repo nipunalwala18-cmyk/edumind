@@ -162,9 +162,9 @@ def node_query_analyzer(state: AgentState) -> dict:
             "effective_query": question,
             "analysis_note": "Greeting detected — answered directly.",
             "answer": (
-                "Hello! I'm the VIT Institutional Knowledge Assistant. Ask me "
-                "anything about VIT policies, procedures, academics, examinations "
-                "or administration."
+                "Hello! I'm your institutional knowledge assistant. Ask me "
+                "anything about institutional policies, procedures, academics, "
+                "examinations or administration."
             ),
             "source_documents": [], "citations": [], "answer_with_refs": "",
             "confidence": "HIGH", "confidence_score": 1.0,
@@ -178,7 +178,7 @@ def node_query_analyzer(state: AgentState) -> dict:
             "effective_query": question,
             "analysis_note": "Out-of-scope topic detected.",
             "answer": (
-                "I'm specialised in VIT institutional knowledge. Please ask about "
+                "I'm specialised in institutional knowledge. Please ask about "
                 "academics, policies, examinations, admissions, research or "
                 "administrative procedures."
             ),

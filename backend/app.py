@@ -49,7 +49,7 @@ from backend.database import ChatMessage, User, get_db, init_db
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="EduMind AI", version="3.0.0", description="VIT Institutional Knowledge Engine")
+app = FastAPI(title="EduMind AI", version="3.0.0", description="Institutional Knowledge Engine")
 
 app.add_middleware(
     CORSMiddleware,

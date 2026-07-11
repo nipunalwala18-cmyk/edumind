@@ -188,7 +188,7 @@ def node_answer(state: AgentState) -> AgentState:
     if route == "greeting":
         return {
             **state,
-            "answer": f"Hello! I'm the VIT Institutional Knowledge Assistant. Ask me anything about VIT policies, procedures, academics, or operations.",
+            "answer": "Hello! I'm your institutional knowledge assistant. Ask me anything about institutional policies, procedures, academics, or operations.",
             "source_documents": [],
             "citations": [],
             "confidence": "HIGH",
@@ -197,7 +197,7 @@ def node_answer(state: AgentState) -> AgentState:
     if route == "out_of_scope":
         return {
             **state,
-            "answer": "I'm specialised in VIT institutional knowledge. Please ask me about academics, policies, examinations, admissions, or administrative procedures.",
+            "answer": "I'm specialised in institutional knowledge. Please ask me about academics, policies, examinations, admissions, or administrative procedures.",
             "source_documents": [],
             "citations": [],
             "confidence": "HIGH",
