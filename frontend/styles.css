@@ -171,7 +171,7 @@ body::before {
 .modal-card { background: var(--surface); border: 1px solid var(--border-2);
     border-radius: var(--radius-lg); padding: 2.6rem; width: 100%; max-width: 420px;
     position: relative; box-shadow: var(--shadow); animation: rise 0.32s cubic-bezier(0.16,1,0.3,1);
-    max-height: calc(100vh - 3rem); overflow-y: auto; }
+    max-height: calc(100vh - 3rem); max-height: calc(100dvh - 3rem); overflow-y: auto; }
 @keyframes rise { from { opacity: 0; transform: translateY(24px) scale(0.98); } to { opacity: 1; transform: none; } }
 
 .modal-card .x { position: absolute; top: 1.3rem; right: 1.3rem; width: 32px; height: 32px;
@@ -228,7 +228,7 @@ body::before {
 /* ═══════════════════════════════════════════════════════════════════
    APP SHELL
    ═══════════════════════════════════════════════════════════════════ */
-.shell { display: flex; height: 100vh; overflow: hidden; }
+.shell { display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 
 .side { width: 260px; flex-shrink: 0; background: var(--bg-2); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; padding: 1.4rem 0; }
@@ -286,7 +286,7 @@ body::before {
 .hist-item .hi-del:hover { color: #fca5a5; background: rgba(239,68,68,0.1); }
 
 /* main column */
-.main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
 .topbar { height: 64px; flex-shrink: 0; border-bottom: 1px solid var(--border); display: flex;
     align-items: center; justify-content: space-between; padding: 0 1.8rem; }
 .topbar .title { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; }
@@ -476,7 +476,6 @@ body::before {
 
 @media (max-width: 720px) {
     .shell { flex-direction: column; }
-    .main { padding-bottom: 64px; } /* clear the fixed bottom tab bar below */
 
     /* App sidebar → fixed bottom tab bar (icons + labels), not a horizontal
        scroll strip: the previous strip also relied on ".hist-group { display:
@@ -510,7 +509,10 @@ body::before {
     .topbar { padding: 0 1.1rem; }
     .topbar .title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; }
     .topbar .chip { flex-shrink: 0; white-space: nowrap; }
-    .scroll { padding: 1.1rem; }
+    /* Bottom padding lives on the scrollable element itself (not a structural
+       flex parent) so the last bit of content actually scrolls clear of the
+       fixed bottom tab bar instead of getting clipped by .shell's overflow:hidden. */
+    .scroll { padding: 1.1rem 1.1rem calc(1.1rem + 64px); }
 
     /* Wide grid tables: scroll horizontally instead of crushing columns illegible */
     .utable { overflow-x: auto; }
@@ -536,7 +538,7 @@ body::before {
 .doc-modal { position: fixed; inset: 0; z-index: 1000; display: flex;
   align-items: center; justify-content: center; padding: 2.5vh 2vw;
   background: rgba(0,0,0,0.62); backdrop-filter: blur(4px); animation: fadeIn 0.15s ease; }
-.doc-modal-card { width: min(960px, 100%); height: 95vh; display: flex; flex-direction: column;
+.doc-modal-card { width: min(960px, 100%); height: 95vh; height: 95dvh; display: flex; flex-direction: column;
   background: var(--bg); border: 1px solid var(--border-2); border-radius: 16px;
   overflow: hidden; box-shadow: 0 24px 80px rgba(0,0,0,0.6); }
 .doc-modal-head { display: flex; align-items: center; justify-content: space-between;
