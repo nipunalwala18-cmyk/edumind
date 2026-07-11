@@ -311,6 +311,19 @@ def _serialize_sop_table(table) -> str:
                 seen_cells.update(unique_cells)
             current_label = label
 
+        elif first.strip().lower() in ("key activities", "process description"):
+            # Header row for an "Activity | Description" process table
+            # (the dominant table shape in this corpus) — no content to emit.
+            seen_cells.update(unique_cells)
+
+        elif len(unique_cells) == 2:
+            # "Activity | Description" data row. Emitting these as two
+            # disconnected lines (the old fallback below) loses the
+            # relationship entirely once chunked; keep it as one sentence.
+            activity, description = unique_cells
+            lines.append(f"{activity}: {description}")
+            seen_cells.update(unique_cells)
+
         else:
             for c in unique_cells:
                 if c not in seen_cells and len(c) > 3:
@@ -334,7 +347,14 @@ def _serialize_generic_table(table) -> str:
         cells = list(dict.fromkeys(
             cell.text.strip() for cell in row.cells if cell.text.strip()
         ))
-        row_text = " | ".join(c for c in cells if c and c not in seen_cells)
+        new_cells = [c for c in cells if c and c not in seen_cells]
+        if len(new_cells) == 2:
+            # "Label | Value" row — render as a sentence rather than a raw
+            # pipe-join, which produces poor embeddings/keyword matches
+            # once the table's row structure is lost during chunking.
+            row_text = f"{new_cells[0]}: {new_cells[1]}"
+        else:
+            row_text = " | ".join(new_cells)
         if row_text:
             lines.append(row_text)
         seen_cells.update(cells)
