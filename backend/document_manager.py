@@ -170,13 +170,13 @@ def ingest_uploaded_file(
         result = _ingest_uploaded_file_inner(
             filename, content_bytes, forced_access_level, uploaded_by, t_start
         )
-        _store_last_result(result)
-        return result
     except Exception as exc:
-        _store_last_result(IngestionResult(filename=filename, status="failed", error=str(exc)))
-        raise
+        logger.error("[DOC_MANAGER] Unhandled ingestion error for '%s': %s", filename, exc, exc_info=True)
+        result = IngestionResult(filename=filename, status="failed", error=str(exc))
     finally:
         _set_indexing(False)
+    _store_last_result(result)
+    return result
 
 
 def _ingest_uploaded_file_inner(
