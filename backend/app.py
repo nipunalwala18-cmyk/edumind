@@ -126,11 +126,13 @@ def on_startup():
             chroma_ids = set(chroma_data.get("ids") or [])
             
             conn = ledger.get_connection()
-            cur = conn.cursor()
-            cur.execute("SELECT chunk_id FROM chunks")
-            rows = cur.fetchall()
-            ledger_ids = {row["chunk_id"] if (isinstance(row, dict) or not isinstance(row, tuple)) else row[0] for row in rows}
-            conn.close()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT chunk_id FROM chunks")
+                rows = cur.fetchall()
+                ledger_ids = {row["chunk_id"] if (isinstance(row, dict) or not isinstance(row, tuple)) else row[0] for row in rows}
+            finally:
+                conn.close()
             
             orphaned_ids = chroma_ids - ledger_ids
             orphaned_count = len(orphaned_ids)

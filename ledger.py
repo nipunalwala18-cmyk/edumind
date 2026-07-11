@@ -133,66 +133,71 @@ def _migrate_documents_table(cursor) -> None:
 def initialize_db():
     """Initializes the database tables if they do not exist."""
     conn = get_connection()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS documents (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        doc_id TEXT UNIQUE,
-        filepath TEXT UNIQUE,
-        sha256_hash TEXT,
-        status TEXT,
-        title TEXT,
-        category TEXT,
-        department TEXT,
-        version TEXT,
-        date TEXT,
-        access_level TEXT,
-        created_at TEXT,
-        last_processed TEXT
-    )
-    """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id TEXT UNIQUE,
+            filepath TEXT UNIQUE,
+            sha256_hash TEXT,
+            status TEXT,
+            title TEXT,
+            category TEXT,
+            department TEXT,
+            version TEXT,
+            date TEXT,
+            access_level TEXT,
+            created_at TEXT,
+            last_processed TEXT
+        )
+        """)
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS process_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        filepath TEXT,
-        action TEXT,
-        status TEXT,
-        message TEXT,
-        timestamp TEXT
-    )
-    """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS process_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filepath TEXT,
+            action TEXT,
+            status TEXT,
+            message TEXT,
+            timestamp TEXT
+        )
+        """)
 
-    # Migrate documents table BEFORE creating chunks, so doc_id column exists
-    _migrate_documents_table(cursor)
+        # Migrate documents table BEFORE creating chunks, so doc_id column exists
+        _migrate_documents_table(cursor)
 
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS chunks (
-        chunk_id TEXT PRIMARY KEY,
-        doc_id TEXT NOT NULL,
-        chunk_index INTEGER NOT NULL,
-        content TEXT NOT NULL,
-        section_heading TEXT,
-        category TEXT,
-        department TEXT,
-        access_level TEXT,
-        version TEXT,
-        source_file TEXT,
-        total_chunks INTEGER,
-        created_at TEXT,
-        FOREIGN KEY (doc_id) REFERENCES documents(doc_id)
-    )
-    """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chunks (
+            chunk_id TEXT PRIMARY KEY,
+            doc_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            section_heading TEXT,
+            category TEXT,
+            department TEXT,
+            access_level TEXT,
+            version TEXT,
+            source_file TEXT,
+            total_chunks INTEGER,
+            created_at TEXT,
+            FOREIGN KEY (doc_id) REFERENCES documents(doc_id)
+        )
+        """)
 
-    _migrate_chunks_embedding_columns(cursor)
+        _migrate_chunks_embedding_columns(cursor)
 
-    cursor.execute(
-        "CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id)"
-    )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id)"
+        )
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def _row_to_dict(row) -> dict:
@@ -250,21 +255,25 @@ def register_document(filepath, sha256_hash, status="assessed", metadata=None):
 def get_document(filepath):
     """Retrieves document record by original filepath (Phase 1 key)."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM documents WHERE filepath = ?", (filepath,))
-    row = cursor.fetchone()
-    conn.close()
-    return _row_to_dict(row)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM documents WHERE filepath = ?", (filepath,))
+        row = cursor.fetchone()
+        return _row_to_dict(row)
+    finally:
+        conn.close()
 
 
 def get_all_documents():
     """Retrieves all registered documents from ledger."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM documents ORDER BY id")
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM documents ORDER BY id")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -393,21 +402,25 @@ def delete_document(doc_id: str) -> bool:
 def get_document_by_source(source_file: str) -> dict | None:
     """Retrieves a document by its staged source_file path."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM documents WHERE source_file = ?", (source_file,))
-    row = cursor.fetchone()
-    conn.close()
-    return _row_to_dict(row)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM documents WHERE source_file = ?", (source_file,))
+        row = cursor.fetchone()
+        return _row_to_dict(row)
+    finally:
+        conn.close()
 
 
 def get_document_by_doc_id(doc_id: str) -> dict | None:
     """Retrieves a document by its doc_id (SHA-256 of staged file)."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM documents WHERE doc_id = ?", (doc_id,))
-    row = cursor.fetchone()
-    conn.close()
-    return _row_to_dict(row)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM documents WHERE doc_id = ?", (doc_id,))
+        row = cursor.fetchone()
+        return _row_to_dict(row)
+    finally:
+        conn.close()
 
 
 def get_document_by_department(department: str) -> dict | None:
@@ -519,24 +532,28 @@ def save_chunks(records: list[dict]) -> None:
 def get_chunks_by_doc_id(doc_id: str) -> list[dict]:
     """Retrieves all chunks for a document, ordered by chunk_index."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM chunks WHERE doc_id = ? ORDER BY chunk_index",
-        (doc_id,),
-    )
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM chunks WHERE doc_id = ? ORDER BY chunk_index",
+            (doc_id,),
+        )
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
 
 def get_chunk_count() -> int:
     """Returns total number of chunks stored in the ledger."""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM chunks")
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM chunks")
+        count = cursor.fetchone()[0]
+        return count
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -562,27 +579,29 @@ def get_chunks_pending_embedding(doc_id: str | None = None) -> list[dict]:
         List of chunk row dicts ordered by doc_id, chunk_index.
     """
     conn = get_connection()
-    cursor = conn.cursor()
-    if doc_id:
-        cursor.execute(
-            """
-            SELECT * FROM chunks
-            WHERE embedded_at IS NULL AND doc_id = ?
-            ORDER BY doc_id, chunk_index
-            """,
-            (doc_id,),
-        )
-    else:
-        cursor.execute(
-            """
-            SELECT * FROM chunks
-            WHERE embedded_at IS NULL
-            ORDER BY doc_id, chunk_index
-            """
-        )
-    rows = cursor.fetchall()
-    conn.close()
-    return [dict(row) for row in rows]
+    try:
+        cursor = conn.cursor()
+        if doc_id:
+            cursor.execute(
+                """
+                SELECT * FROM chunks
+                WHERE embedded_at IS NULL AND doc_id = ?
+                ORDER BY doc_id, chunk_index
+                """,
+                (doc_id,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT * FROM chunks
+                WHERE embedded_at IS NULL
+                ORDER BY doc_id, chunk_index
+                """
+            )
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
 
 
 def mark_chunks_embedded(chunk_ids: list[str]) -> None:

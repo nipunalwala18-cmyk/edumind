@@ -316,13 +316,15 @@ def get_ingestion_logs(limit: int = 50) -> list[dict]:
         import sqlite3
         import ledger
         conn = ledger.get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM process_logs ORDER BY timestamp DESC LIMIT ?", (limit,)
-        )
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(r) for r in rows]
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM process_logs ORDER BY timestamp DESC LIMIT ?", (limit,)
+            )
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
     except Exception as exc:
         logger.error("[DOC_MANAGER] get_ingestion_logs failed: %s", exc)
         return []

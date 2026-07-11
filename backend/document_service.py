@@ -636,11 +636,13 @@ def get_chunk_by_id(chunk_id: str) -> Optional[dict]:
     try:
         import ledger
         conn = ledger.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM chunks WHERE chunk_id = ?", (chunk_id,))
-        row = cursor.fetchone()
-        conn.close()
-        return dict(row) if row else None
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM chunks WHERE chunk_id = ?", (chunk_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
     except Exception as exc:
         logger.error("[DOCVIEW] chunk lookup failed for chunk_id=%s: %s", chunk_id, exc)
         return None
