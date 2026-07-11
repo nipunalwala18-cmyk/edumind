@@ -56,19 +56,31 @@ UPSERT_BATCH_SIZE = 100
 # Singleton
 # ---------------------------------------------------------------------------
 
-_chroma_store_instance: Optional["ChromaStore"] = None
+_vector_store_instance = None
 
 
-def get_chroma_store() -> "ChromaStore":
+def get_chroma_store():
     """
-    Returns the process-level ChromaStore singleton.
-    Initializes the PersistentClient on first call.
+    Returns the process-level vector store singleton.
+    Dynamically chooses between ChromaStore and PGVectorStore based on environment variables.
     """
-    global _chroma_store_instance
-    if _chroma_store_instance is None:
-        _chroma_store_instance = ChromaStore()
-        _chroma_store_instance.initialize()
-    return _chroma_store_instance
+    global _vector_store_instance
+    if _vector_store_instance is None:
+        backend = os.getenv("VECTOR_STORE_BACKEND", "").strip().lower()
+        db_url = os.getenv("DATABASE_URL", "")
+        is_postgres_db = db_url.startswith("postgresql://") or db_url.startswith("postgres://")
+        chroma_host = os.getenv("CHROMA_SERVER_HOST")
+
+        if backend in ("supabase", "pgvector") or (is_postgres_db and not chroma_host):
+            from vector_store.pgvector_store import PGVectorStore
+            logger.info("[VECTOR_STORE] Instantiating PGVectorStore (Supabase pgvector backend)")
+            _vector_store_instance = PGVectorStore()
+        else:
+            logger.info("[VECTOR_STORE] Instantiating ChromaStore (ChromaDB backend)")
+            _vector_store_instance = ChromaStore()
+            
+        _vector_store_instance.initialize()
+    return _vector_store_instance
 
 
 # ---------------------------------------------------------------------------

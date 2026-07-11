@@ -76,6 +76,13 @@ class CrossEncoderReranker:
 
     def load(self) -> None:
         """Loads the cross-encoder model. Called once by the singleton factory."""
+        import os
+        disable_local = os.getenv("DISABLE_LOCAL_RERANKER", "false").lower() in ("true", "1", "yes")
+        if disable_local:
+            logger.info("[RERANKER] Local cross-encoder reranker is disabled via DISABLE_LOCAL_RERANKER.")
+            self._model = None
+            return
+
         try:
             from sentence_transformers import CrossEncoder
         except ImportError:
@@ -109,6 +116,10 @@ class CrossEncoderReranker:
             List of RawSearchResult with rerank_score populated, sorted
             by rerank_score descending, length = min(top_k, len(candidates)).
         """
+        if self._model is None:
+            # Reranker is disabled, return top search results directly
+            return candidates[:top_k]
+
         self._assert_loaded()
         if not candidates:
             return []
