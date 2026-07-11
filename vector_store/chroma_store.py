@@ -99,21 +99,40 @@ class ChromaStore:
 
     def initialize(self) -> None:
         """
-        Connects to ChromaDB PersistentClient and gets/creates the collection.
-        Creates the storage directory if it does not exist.
+        Connects to ChromaDB Client (PersistentClient locally or HttpClient for cloud)
+        and gets/creates the collection.
         """
         try:
             import chromadb
-            from chromadb.config import Settings
         except ImportError:
             raise ImportError(
                 "chromadb is not installed. Run: pip install chromadb"
             )
 
-        os.makedirs(self._db_path, exist_ok=True)
-        logger.info(f"[CHROMA] Connecting to PersistentClient at: {self._db_path}")
+        host = os.getenv("CHROMA_SERVER_HOST")
+        port = os.getenv("CHROMA_SERVER_PORT")
+        ssl = os.getenv("CHROMA_SERVER_SSL", "false").lower() in ("true", "1", "yes")
+        auth_provider = os.getenv("CHROMA_SERVER_AUTH_PROVIDER")
+        auth_credentials = os.getenv("CHROMA_SERVER_AUTH_CREDENTIALS")
 
-        self._client = chromadb.PersistentClient(path=self._db_path)
+        if host:
+            logger.info(f"[CHROMA] Connecting to HttpClient at: {host}:{port or 8000} (ssl={ssl})")
+            client_kwargs = {
+                "host": host,
+                "ssl": ssl,
+            }
+            if port:
+                client_kwargs["port"] = int(port)
+            if auth_provider and auth_credentials:
+                client_kwargs["settings"] = chromadb.Settings(
+                    chroma_client_auth_provider=auth_provider,
+                    chroma_client_auth_credentials=auth_credentials,
+                )
+            self._client = chromadb.HttpClient(**client_kwargs)
+        else:
+            os.makedirs(self._db_path, exist_ok=True)
+            logger.info(f"[CHROMA] Connecting to PersistentClient at: {self._db_path}")
+            self._client = chromadb.PersistentClient(path=self._db_path)
 
         self._collection = self._client.get_or_create_collection(
             name     = COLLECTION_NAME,

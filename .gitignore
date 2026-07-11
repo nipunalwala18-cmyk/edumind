@@ -33,13 +33,15 @@ htmlcov/
 # Ollama
 .ollama/
 
-#Institutional Data (Ignore other data, but allow staging documents)
-data/*
-!data/staging/
+#Institutional Data (Ignore staging and pending uploads)
+data/staging/
+data/pending_uploads/
 
-# Databases (Ignore temporary databases, but allow ledger and institutional databases)
+# Databases (Ignore all database files)
 *.db
-!ingestion_ledger.db
-!institutional.db
+
+# Vector Stores
+vector_store/chroma_db/
+
 .vercel
 .env*

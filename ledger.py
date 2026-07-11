@@ -1,10 +1,83 @@
 import sqlite3
 import os
 from datetime import datetime
+import psycopg2
+import psycopg2.extras
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "ingestion_ledger.db"))
 
-# Phase 2 columns added to the original Phase 1 documents table.
+class PostgreSQLAdapterCursor:
+    def __init__(self, raw_cursor):
+        self._cursor = raw_cursor
+
+    def execute(self, sql, parameters=None):
+        if "AUTOINCREMENT" in sql:
+            sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+            sql = sql.replace("AUTOINCREMENT", "")
+        if parameters:
+            sql = sql.replace("?", "%s")
+        return self._cursor.execute(sql, parameters or ())
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+class PostgreSQLAdapterConnection:
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+
+    def cursor(self):
+        raw_cursor = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        return PostgreSQLAdapterCursor(raw_cursor)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
+def get_connection():
+    """Returns a connection to the database (PostgreSQL or SQLite), creating it if it doesn't exist."""
+    db_url = os.getenv("LEDGER_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if db_url and (db_url.startswith("postgresql://") or db_url.startswith("postgres://")):
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        conn = psycopg2.connect(db_url)
+        return PostgreSQLAdapterConnection(conn)
+    else:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+def _ensure_column(cursor, table: str, column: str, definition: str) -> None:
+    """Adds a column to an existing table if it is not already present."""
+    is_postgres = isinstance(cursor, PostgreSQLAdapterCursor)
+    if is_postgres:
+        cursor._cursor.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+            (table.lower(),)
+        )
+        existing = {row["column_name"].lower() for row in cursor.fetchall()}
+    else:
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        
+    if column.lower() not in existing:
+        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 _PHASE2_DOCUMENT_COLUMNS = {
     "doc_id": "TEXT",
     "source_file": "TEXT",
@@ -14,21 +87,6 @@ _PHASE2_DOCUMENT_COLUMNS = {
     "ingested_at": "TEXT",
     "uploaded_by": "TEXT",
 }
-
-
-def get_connection():
-    """Returns a connection to the SQLite database, creating it if it doesn't exist."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _ensure_column(cursor, table: str, column: str, definition: str) -> None:
-    """Adds a column to an existing table if it is not already present."""
-    cursor.execute(f"PRAGMA table_info({table})")
-    existing = {row[1] for row in cursor.fetchall()}
-    if column not in existing:
-        cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def _migrate_documents_table(cursor) -> None:
