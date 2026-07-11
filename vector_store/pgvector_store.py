@@ -12,6 +12,7 @@ class PGVectorStore:
     """
     def __init__(self) -> None:
         self._initialized = False
+        self._collection = None
 
     def initialize(self) -> None:
         if self._initialized:
