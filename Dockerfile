@@ -9,10 +9,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System packages required by python-docx, sentence-transformers, chromadb
+# System packages required by python-docx, sentence-transformers, chromadb,
+# and antiword (legacy .doc text extraction — python-docx only reads .docx)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgomp1 \
+    antiword \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies first

@@ -423,6 +423,40 @@ def _extract_text_from_pdf(filepath: str) -> tuple[list[str], str]:
     return paragraph_texts, full_text
 
 
+def _extract_text_from_legacy_doc(filepath: str) -> tuple[list[str], str]:
+    """
+    Extracts text from a legacy binary .doc (Word 97-2003 / OLE Compound
+    File) via the `antiword` system tool. python-docx only reads the modern
+    zip-based .docx format, so real .doc files need a separate path.
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["antiword", filepath],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        raise RuntimeError(
+            "antiword is not installed on this server. Legacy .doc "
+            "extraction requires the 'antiword' system package."
+        )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"antiword failed (exit {result.returncode}): {result.stderr.strip()}")
+
+    paragraph_texts: list[str] = []
+    for line in result.stdout.split("\n"):
+        line = line.strip()
+        if line:
+            paragraph_texts.append(line)
+
+    full_text = "\n\n".join(paragraph_texts)
+    return paragraph_texts, full_text
+
+
 # ===========================================================================
 # SECTION 4: Text Cleaning
 # ===========================================================================
@@ -552,6 +586,8 @@ def ingest_document(filepath: str, summary: IngestionSummary) -> Optional[tuple[
     try:
         if ext == ".pdf":
             paragraph_texts, raw_text = _extract_text_from_pdf(filepath)
+        elif ext == ".doc":
+            paragraph_texts, raw_text = _extract_text_from_legacy_doc(filepath)
         else:
             doc = docx.Document(filepath)
             paragraph_texts, raw_text = _extract_text_from_document(doc)

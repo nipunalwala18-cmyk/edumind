@@ -47,6 +47,14 @@ import threading
 _indexing_lock = threading.Lock()
 _indexing_state: dict = {"active": False, "filename": None, "started_at": None}
 
+# Serializes actual ingestion runs. Each upload/approval schedules its own
+# independent FastAPI background task, so without this, multiple uploads
+# submitted close together would run their full extract/chunk/embed/index
+# pipelines concurrently — racing on _indexing_state/_last_result and, worse,
+# competing for the same constrained CPU/DB/embedding-API resources, which is
+# what caused larger/later uploads in a batch to silently stall mid-pipeline.
+_ingestion_run_lock = threading.Lock()
+
 
 def get_indexing_state() -> dict:
     with _indexing_lock:
@@ -164,19 +172,20 @@ def ingest_uploaded_file(
     Returns IngestionResult with full status.
     """
     import time
-    t_start = time.perf_counter()
-    _set_indexing(True, filename)
-    try:
-        result = _ingest_uploaded_file_inner(
-            filename, content_bytes, forced_access_level, uploaded_by, t_start
-        )
-    except Exception as exc:
-        logger.error("[DOC_MANAGER] Unhandled ingestion error for '%s': %s", filename, exc, exc_info=True)
-        result = IngestionResult(filename=filename, status="failed", error=str(exc))
-    finally:
-        _set_indexing(False)
-    _store_last_result(result)
-    return result
+    with _ingestion_run_lock:  # serialize — see _ingestion_run_lock's docstring
+        t_start = time.perf_counter()
+        _set_indexing(True, filename)
+        try:
+            result = _ingest_uploaded_file_inner(
+                filename, content_bytes, forced_access_level, uploaded_by, t_start
+            )
+        except Exception as exc:
+            logger.error("[DOC_MANAGER] Unhandled ingestion error for '%s': %s", filename, exc, exc_info=True)
+            result = IngestionResult(filename=filename, status="failed", error=str(exc))
+        finally:
+            _set_indexing(False)
+        _store_last_result(result)
+        return result
 
 
 def _ingest_uploaded_file_inner(
