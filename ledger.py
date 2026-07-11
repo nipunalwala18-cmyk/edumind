@@ -6,6 +6,17 @@ import psycopg2.extras
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "ingestion_ledger.db"))
 
+class PostgreSQLRow(dict):
+    def __init__(self, raw_row, description):
+        self._keys = [col[0] for col in description]
+        super().__init__(zip(self._keys, raw_row))
+        self._values = raw_row
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return super().__getitem__(key)
+
 class PostgreSQLAdapterCursor:
     def __init__(self, raw_cursor):
         self._cursor = raw_cursor
@@ -22,11 +33,14 @@ class PostgreSQLAdapterCursor:
         row = self._cursor.fetchone()
         if row is None:
             return None
-        return dict(row)
+        return PostgreSQLRow(row, self._cursor.description)
 
     def fetchall(self):
         rows = self._cursor.fetchall()
-        return [dict(r) for r in rows]
+        desc = self._cursor.description
+        if not rows:
+            return []
+        return [PostgreSQLRow(r, desc) for r in rows]
 
     def __getattr__(self, name):
         return getattr(self._cursor, name)
@@ -36,7 +50,7 @@ class PostgreSQLAdapterConnection:
         self._conn = raw_conn
 
     def cursor(self):
-        raw_cursor = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        raw_cursor = self._conn.cursor()
         return PostgreSQLAdapterCursor(raw_cursor)
 
     def commit(self):
