@@ -248,21 +248,52 @@ class PGVectorStore:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
 
+            # The embeddings table has no chunk_index/total_chunks/source_file/
+            # section_heading columns (it only stores what's needed for vector
+            # search + RBAC filtering) — look those up from the ledger's chunks
+            # table in one batched query, keyed by chunk_id, instead of leaving
+            # every citation defaulted to chunk_index=0 (which made every
+            # "open source" click jump to the same spot regardless of which
+            # chunk actually matched).
+            chunk_ids = [r["id"] for r in rows]
+            chunk_meta: dict[str, dict] = {}
+            if chunk_ids:
+                placeholders = ",".join(["?"] * len(chunk_ids))
+                cursor.execute(
+                    f"""
+                    SELECT chunk_id, chunk_index, total_chunks, section_heading, source_file
+                    FROM chunks WHERE chunk_id IN ({placeholders})
+                    """,
+                    chunk_ids,
+                )
+                for cr in cursor.fetchall():
+                    chunk_meta[cr["chunk_id"]] = {
+                        "chunk_index":     cr["chunk_index"],
+                        "total_chunks":    cr["total_chunks"],
+                        "section_heading": cr["section_heading"],
+                        "source_file":     cr["source_file"],
+                    }
+
             results = []
             for r in rows:
                 dist = float(r.get("distance", 1.0) or 1.0)
+                extra = chunk_meta.get(r["id"], {})
                 results.append({
                     "chunk_id": r["id"],
                     "content":  r["content"],
                     "distance": dist,
                     "score":    1.0 - dist,
                     "metadata": {
-                        "doc_id":       r["doc_id"],
-                        "access_level": r["access_level"],
-                        "department":   r["department"],
-                        "category":     r["category"],
-                        "title":        r["title"],
-                        "version":      r["version"],
+                        "doc_id":          r["doc_id"],
+                        "access_level":    r["access_level"],
+                        "department":      r["department"],
+                        "category":        r["category"],
+                        "title":           r["title"],
+                        "version":         r["version"],
+                        "chunk_index":     extra.get("chunk_index", 0),
+                        "total_chunks":    extra.get("total_chunks", 0),
+                        "section_heading": extra.get("section_heading", ""),
+                        "source_file":     extra.get("source_file", ""),
                     },
                 })
             return results
