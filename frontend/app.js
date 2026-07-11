@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════════════════════════════ */
 let API = localStorage.getItem('EDUMIND_API_URL');
 if (API === null) {
-  API = 'https://edumind-iqp0.onrender.com';
+  API = 'https://demo-rffq.onrender.com';
 }
 
 function setApiUrl(val) {
