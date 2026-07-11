@@ -53,12 +53,12 @@ QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 # Singleton
 # ---------------------------------------------------------------------------
 
-_embedder_instance: Optional[Union[BGEEmbedder, GeminiEmbedder]] = None
+_embedder_instance: Optional[Union[BGEEmbedder, GeminiEmbedder, HuggingFaceEmbedder]] = None
 
 
-def get_embedder() -> Union[BGEEmbedder, GeminiEmbedder]:
+def get_embedder() -> Union[BGEEmbedder, GeminiEmbedder, HuggingFaceEmbedder]:
     """
-    Returns the process-level BGEEmbedder or GeminiEmbedder singleton.
+    Returns the process-level BGEEmbedder, GeminiEmbedder, or HuggingFaceEmbedder singleton.
     Loads the model/API on first call; subsequent calls return the cached instance.
     Use this function everywhere — never instantiate embedder classes directly.
     """
@@ -67,6 +67,8 @@ def get_embedder() -> Union[BGEEmbedder, GeminiEmbedder]:
         backend = os.environ.get("EMBEDDING_BACKEND", "local").strip().lower()
         if backend == "gemini":
             _embedder_instance = GeminiEmbedder()
+        elif backend in ("hf", "huggingface"):
+            _embedder_instance = HuggingFaceEmbedder()
         else:
             _embedder_instance = BGEEmbedder()
     if not _embedder_instance.is_loaded:
@@ -352,5 +354,111 @@ class GeminiEmbedder:
                 return data["embedding"]["values"]
         except Exception as e:
             logger.error(f"[EMBEDDER] Failed to embed query: {e}")
+            raise
+
+
+class HuggingFaceEmbedder:
+    """
+    Wraps Hugging Face Serverless Inference API for BAAI/bge-base-en-v1.5.
+    """
+    def __init__(self) -> None:
+        self.api_token = os.environ.get("HF_API_TOKEN", "")
+        self._model_name = "BAAI/bge-base-en-v1.5"
+        self._device = "cloud-hf"
+        self._is_loaded = False
+
+    def load(self) -> None:
+        self._is_loaded = True
+        logger.info(f"[EMBEDDER] HuggingFaceEmbedder initialized using {self._model_name} (cloud API).")
+
+    @property
+    def is_loaded(self) -> bool:
+        return self._is_loaded
+
+    @property
+    def embedding_dim(self) -> int:
+        return 768
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    @property
+    def device(self) -> str:
+        return self._device
+
+    def _call_api(self, texts: list[str]) -> list[list[float]]:
+        headers = {}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+            
+        url = f"https://api-inference.huggingface.co/models/{self._model_name}"
+        payload = {"inputs": texts, "options": {"wait_for_model": True}}
+        
+        with httpx.Client(timeout=60.0) as client:
+            response = client.post(url, json=payload, headers=headers)
+            if response.status_code != 200:
+                raise RuntimeError(f"HuggingFace Inference API error: {response.text}")
+            res = response.json()
+            # The API returns a list of list of floats, or a single list if one input
+            # If it returns a list of floats (1D), wrap it in a list
+            if isinstance(res, list) and len(res) > 0 and not isinstance(res[0], list):
+                res = [res]
+            return res
+
+    def embed_documents(
+        self,
+        texts: list[str],
+        batch_size: int = 20,
+        show_progress: bool = True,
+    ) -> list[list[float]]:
+        if not texts:
+            return []
+        
+        embeddings = []
+        total = len(texts)
+        for start in range(0, total, batch_size):
+            batch = texts[start : start + batch_size]
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                try:
+                    res = self._call_api(batch)
+                    embeddings.extend(res)
+                    break
+                except Exception as e:
+                    if attempt == max_attempts - 1:
+                        logger.error(f"[EMBEDDER] HuggingFace embedding failed: {e}")
+                        raise
+                    time.sleep(3.0)
+            
+            if show_progress:
+                done = min(start + batch_size, total)
+                logger.info(f"[EMBEDDER] Embedded {done}/{total} documents via HF API.")
+                
+        return embeddings
+
+    def embed_query(self, query: str) -> list[float]:
+        prefixed_query = QUERY_INSTRUCTION + query
+        headers = {}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+            
+        url = f"https://api-inference.huggingface.co/models/{self._model_name}"
+        payload = {"inputs": [prefixed_query], "options": {"wait_for_model": True}}
+        
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(url, json=payload, headers=headers)
+                if response.status_code != 200:
+                    raise RuntimeError(f"HuggingFace Inference API error: {response.text}")
+                res = response.json()
+                # HF API returns a list of list of floats (or a list of floats if single input depending on response)
+                if isinstance(res, list) and len(res) > 0:
+                    if isinstance(res[0], list):
+                        return res[0]
+                    return res
+                raise RuntimeError(f"Unexpected response format: {res}")
+        except Exception as e:
+            logger.error(f"[EMBEDDER] Failed to embed query via HF API: {e}")
             raise
 
