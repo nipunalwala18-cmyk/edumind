@@ -392,9 +392,9 @@ class HuggingFaceEmbedder:
         if self.api_token:
             headers["Authorization"] = f"Bearer {self.api_token}"
             
-        url = f"https://api-inference.huggingface.co/models/{self._model_name}"
+        url = f"https://router.huggingface.co/hf-inference/models/{self._model_name}/pipeline/feature-extraction"
         payload = {"inputs": texts, "options": {"wait_for_model": True}}
-        
+
         with httpx.Client(timeout=60.0) as client:
             response = client.post(url, json=payload, headers=headers)
             if response.status_code != 200:
@@ -443,7 +443,7 @@ class HuggingFaceEmbedder:
         if self.api_token:
             headers["Authorization"] = f"Bearer {self.api_token}"
             
-        url = f"https://api-inference.huggingface.co/models/{self._model_name}"
+        url = f"https://router.huggingface.co/hf-inference/models/{self._model_name}/pipeline/feature-extraction"
         payload = {"inputs": [prefixed_query], "options": {"wait_for_model": True}}
         
         try:
