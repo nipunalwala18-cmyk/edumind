@@ -5,6 +5,44 @@ from ledger import get_connection
 
 logger = logging.getLogger(__name__)
 
+
+def _condition_to_sql(field: str, op_dict: dict) -> tuple[str, list]:
+    """Converts a single {field: {"$eq"|"$in": value}} condition to SQL."""
+    if "$eq" in op_dict:
+        return f"{field} = ?", [op_dict["$eq"]]
+    if "$in" in op_dict:
+        values = list(op_dict["$in"])
+        placeholders = ",".join(["?"] * len(values))
+        return f"{field} IN ({placeholders})", values
+    raise ValueError(f"Unsupported where-clause operator for field '{field}': {op_dict}")
+
+
+def _where_clause_to_sql(where_clause: Optional[dict]) -> tuple[str, list]:
+    """
+    Converts a ChromaDB-style metadata where-clause (see retrieval/filters.py)
+    into a SQL WHERE fragment (without the "WHERE" keyword) and its params.
+    Supports $and, $or, $eq, $in — the operators filters.py actually emits.
+    """
+    if not where_clause:
+        return "", []
+    if "$and" in where_clause:
+        parts, params = [], []
+        for cond in where_clause["$and"]:
+            sql, p = _where_clause_to_sql(cond)
+            parts.append(f"({sql})")
+            params.extend(p)
+        return " AND ".join(parts), params
+    if "$or" in where_clause:
+        parts, params = [], []
+        for cond in where_clause["$or"]:
+            sql, p = _where_clause_to_sql(cond)
+            parts.append(f"({sql})")
+            params.extend(p)
+        return " OR ".join(parts), params
+    field, op_dict = next(iter(where_clause.items()))
+    return _condition_to_sql(field, op_dict)
+
+
 class PGVectorStore:
     """
     A vector store using Supabase/PostgreSQL pgvector extension.
@@ -170,6 +208,66 @@ class PGVectorStore:
             return results
         except Exception as e:
             logger.error(f"[PGVECTOR] Query failed: {e}")
+            raise e
+        finally:
+            conn.close()
+
+    def query_with_filter(
+        self,
+        query_embedding: list[float],
+        where_clause: Optional[dict],
+        n_results: int = 10,
+    ) -> list[dict]:
+        """
+        Nearest-neighbour search with a pre-built ChromaDB-style metadata filter
+        (see retrieval/filters.py). Mirrors ChromaStore.query_with_filter's
+        contract so retrieval/hybrid_search.py's DenseSearchBackend works
+        against either vector store backend.
+        """
+        self.initialize()
+        conn = get_connection()
+        cursor = conn.cursor()
+        try:
+            emb_str = "[" + ",".join(map(str, query_embedding)) + "]"
+
+            sql = """
+            SELECT id, content, doc_id, access_level, department, category, title, version,
+                   (embedding <=> ?::vector) as distance
+            FROM embeddings
+            """
+            params = [emb_str]
+
+            where_sql, where_params = _where_clause_to_sql(where_clause)
+            if where_sql:
+                sql += f" WHERE {where_sql}"
+                params.extend(where_params)
+
+            sql += " ORDER BY distance ASC LIMIT ?"
+            params.append(n_results)
+
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+
+            results = []
+            for r in rows:
+                dist = float(r.get("distance", 1.0) or 1.0)
+                results.append({
+                    "chunk_id": r["id"],
+                    "content":  r["content"],
+                    "distance": dist,
+                    "score":    1.0 - dist,
+                    "metadata": {
+                        "doc_id":       r["doc_id"],
+                        "access_level": r["access_level"],
+                        "department":   r["department"],
+                        "category":     r["category"],
+                        "title":        r["title"],
+                        "version":      r["version"],
+                    },
+                })
+            return results
+        except Exception as e:
+            logger.error(f"[PGVECTOR] query_with_filter failed: {e}")
             raise e
         finally:
             conn.close()
