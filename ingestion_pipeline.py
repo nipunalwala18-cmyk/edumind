@@ -95,7 +95,18 @@ def _extract_module_name(filename: str, paragraphs: list[str]) -> str:
         if m:
             return m.group(1).strip()
 
-    # Strategy 2: Parse from filename
+    # Strategy 2: Parse from filename — only reliable for the VIT SOP naming
+    # convention (a numeric prefix and/or "VIT" in the name, e.g.
+    # "10.VIT Research & Development 1.0.docx" → "Research & Development").
+    # Documents that don't follow that convention (research papers, arbitrary
+    # uploads) would otherwise have their whole filename parsed into a
+    # nonsense "department" — fall back to "General" for those instead.
+    looks_like_sop_corpus = bool(re.match(r'^\d+[\.\s]', filename)) or bool(
+        re.search(r'\bvit\b', filename, re.IGNORECASE)
+    )
+    if not looks_like_sop_corpus:
+        return "General"
+
     name = os.path.splitext(filename)[0]
     name = re.sub(r'^\d+[\.\s]+', '', name)          # Remove prefix number
     name = re.sub(r'\bvit\b', '', name, flags=re.IGNORECASE)
