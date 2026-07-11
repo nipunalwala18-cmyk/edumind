@@ -249,7 +249,7 @@ class GeminiEmbedder:
 
     def __init__(self) -> None:
         self.api_key = os.environ.get("GEMINI_API_KEY", "")
-        self._model_name = "models/gemini-embedding-2"
+        self._model_name = "models/gemini-embedding-001"
         self._device = "cloud"
         self._is_loaded = False
 
@@ -284,7 +284,7 @@ class GeminiEmbedder:
         if not texts:
             return []
 
-        url = f"https://generativelanguage.googleapis.com/v1/{self._model_name}:batchEmbedContents?key={self.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{self._model_name}:batchEmbedContents?key={self.api_key}"
         embeddings: list[list[float]] = []
         total = len(texts)
 
@@ -338,7 +338,7 @@ class GeminiEmbedder:
         return embeddings
 
     def embed_query(self, query: str) -> list[float]:
-        url = f"https://generativelanguage.googleapis.com/v1/{self._model_name}:embedContent?key={self.api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/{self._model_name}:embedContent?key={self.api_key}"
         payload = {
             "model": self._model_name,
             "taskType": "RETRIEVAL_QUERY",
