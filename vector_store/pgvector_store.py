@@ -186,12 +186,14 @@ class PGVectorStore:
             
             return {
                 "count": count,
+                "vector_count": count,
                 "document_count": doc_count,
+                "db_path": "Supabase PostgreSQL",
                 "backend": "pgvector"
             }
         except Exception as e:
             logger.error(f"[PGVECTOR] Failed to get stats: {e}")
-            return {"count": 0, "document_count": 0, "backend": "pgvector"}
+            return {"count": 0, "vector_count": 0, "document_count": 0, "db_path": "Supabase PostgreSQL", "backend": "pgvector"}
         finally:
             conn.close()
 
