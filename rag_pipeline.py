@@ -105,19 +105,19 @@ class PipelineConfig(BaseModel):
 
     # ---- Retrieval ---------------------------------------------------------
     top_k_dense: int = Field(
-        default=10, ge=1, le=100,
+        default=15, ge=1, le=100,
         description="Dense candidates fetched from ChromaDB.",
     )
     top_k_bm25: int = Field(
-        default=10, ge=1, le=100,
+        default=15, ge=1, le=100,
         description="BM25 candidates fetched from SQLite.",
     )
     top_k_fusion: int = Field(
-        default=10, ge=1, le=100,
+        default=15, ge=1, le=100,
         description="Candidates entering the cross-encoder reranker after RRF.",
     )
     top_k_final: int = Field(
-        default=3, ge=1, le=50,
+        default=5, ge=1, le=50,
         description="Final results returned after reranking.",
     )
     use_bm25: bool = Field(
@@ -135,7 +135,7 @@ class PipelineConfig(BaseModel):
         description="System-prompt template variant.",
     )
     max_chunks: int = Field(
-        default=3, ge=1, le=20,
+        default=5, ge=1, le=20,
         description="Maximum context chunks passed to the LLM.",
     )
     max_context_chars: int = Field(
