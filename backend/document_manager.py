@@ -224,15 +224,18 @@ def _ingest_uploaded_file_inner(
 
     # --- Phase 4+5: embed + index ---
     n_vectors = 0
+    index_error: Optional[str] = None
     try:
         from vector_store.index_pipeline import run_indexing
         index_summary = run_indexing(doc_id=doc_record.doc_id)
         n_vectors = index_summary.chunks_upserted
         if index_summary.errors:
+            index_error = "; ".join(index_summary.errors)
             logger.warning("[DOC_MANAGER] Indexing errors for '%s': %s", filename, index_summary.errors)
     except Exception as exc:
         logger.error("[DOC_MANAGER] Phase 4/5 failed for '%s': %s", filename, exc, exc_info=True)
-        # Non-fatal — doc is ingested and chunked, just not yet vectorized
+        index_error = f"Embedding/indexing failed: {exc}"
+        # Non-fatal to ingestion — doc is chunked and saved, just not yet vectorized
 
     # --- Record contributor for the admin document registry ---
     if uploaded_by:
@@ -252,12 +255,13 @@ def _ingest_uploaded_file_inner(
 
     return IngestionResult(
         filename=filename,
-        status="superseded" if superseded else "ingested",
+        status="indexing_failed" if n_vectors == 0 and index_error else ("superseded" if superseded else "ingested"),
         doc_id=doc_record.doc_id,
         department=doc_record.department,
         version=doc_record.version,
         chunks_created=n_chunks,
         vectors_added=n_vectors,
+        error=index_error,
         processing_ms=round(elapsed_ms, 1),
     )
 

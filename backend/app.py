@@ -621,6 +621,7 @@ def upload_document(
         "vectors_added":   result.vectors_added,
         "processing_ms":   result.processing_ms,
         "superseded":      result.status == "superseded",
+        "error":           result.error,
     }
 
 

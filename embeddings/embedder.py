@@ -64,7 +64,7 @@ def get_embedder() -> Union[BGEEmbedder, GeminiEmbedder, HuggingFaceEmbedder]:
     """
     global _embedder_instance
     if _embedder_instance is None:
-        backend = os.environ.get("EMBEDDING_BACKEND", "local").strip().lower()
+        backend = os.environ.get("EMBEDDING_BACKEND", "hf").strip().lower()
         if backend == "gemini":
             _embedder_instance = GeminiEmbedder()
         elif backend in ("hf", "huggingface"):

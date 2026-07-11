@@ -619,8 +619,10 @@ async function uploadFiles(e) {
     try {
       const fd = new FormData(); fd.append('file', f);
       const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${S.token}` }, body: fd });
-      if (r.ok) { tag.className = 'tag ok'; tag.textContent = 'Indexed'; }
-      else { tag.className = 'tag err'; tag.textContent = 'Failed'; }
+      const body = await r.json().catch(() => ({}));
+      if (r.ok && body.status !== 'indexing_failed') { tag.className = 'tag ok'; tag.textContent = 'Indexed'; }
+      else if (r.ok) { tag.className = 'tag err'; tag.title = body.error || ''; tag.textContent = 'Saved, not indexed'; }
+      else { tag.className = 'tag err'; tag.title = body.detail || ''; tag.textContent = 'Failed'; }
     } catch { tag.className = 'tag err'; tag.textContent = 'Error'; }
   }
   e.target.value = '';
