@@ -128,7 +128,8 @@ def on_startup():
             conn = ledger.get_connection()
             cur = conn.cursor()
             cur.execute("SELECT chunk_id FROM chunks")
-            ledger_ids = {row[0] for row in cur.fetchall()}
+            rows = cur.fetchall()
+            ledger_ids = {row["chunk_id"] if (isinstance(row, dict) or not isinstance(row, tuple)) else row[0] for row in rows}
             conn.close()
             
             orphaned_ids = chroma_ids - ledger_ids
