@@ -607,6 +607,30 @@ function documentsHTML() {
   <div id="docList"><p style="color:var(--text-3);font-size:.88rem">Loading…</p></div>`;
 }
 
+/* Ingestion runs in the background (see backend/app.py's /api/upload docstring)
+   so the upload request returns almost immediately with status:"processing".
+   This polls /api/indexing-status until the background task finishes, then
+   reads the recorded last_result to show the real outcome. */
+async function waitForIndexingDone(expectedFilename, maxWaitMs = 180000) {
+  const start = Date.now();
+  await new Promise(res => setTimeout(res, 800)); // let the background task actually start
+  while (Date.now() - start < maxWaitMs) {
+    try {
+      const r = await fetch(`${API}/api/indexing-status`);
+      if (r.ok) {
+        const s = await r.json();
+        if (!s.active) {
+          if (!expectedFilename || !s.last_result || s.last_result.filename === expectedFilename) {
+            return s.last_result || null;
+          }
+        }
+      }
+    } catch {}
+    await new Promise(res => setTimeout(res, 1500));
+  }
+  return null; // timed out waiting
+}
+
 async function uploadFiles(e) {
   const list = $('uplist');
   const files = [...e.target.files];
@@ -620,9 +644,15 @@ async function uploadFiles(e) {
       const fd = new FormData(); fd.append('file', f);
       const r = await fetch(`${API}/api/upload`, { method: 'POST', headers: { 'Authorization': `Bearer ${S.token}` }, body: fd });
       const body = await r.json().catch(() => ({}));
-      if (r.ok && body.status !== 'indexing_failed') { tag.className = 'tag ok'; tag.textContent = 'Indexed'; }
-      else if (r.ok) { tag.className = 'tag err'; tag.title = body.error || ''; tag.textContent = 'Saved, not indexed'; }
-      else { tag.className = 'tag err'; tag.title = body.detail || ''; tag.textContent = 'Failed'; }
+      if (!r.ok) { tag.className = 'tag err'; tag.title = body.detail || ''; tag.textContent = 'Failed'; continue; }
+
+      tag.textContent = 'indexing…';
+      const result = await waitForIndexingDone(f.name);
+      if (!result) { tag.className = 'tag err'; tag.textContent = 'Timed out'; }
+      else if (result.status === 'ingested' || result.status === 'superseded') { tag.className = 'tag ok'; tag.textContent = 'Indexed'; }
+      else if (result.status === 'duplicate') { tag.className = 'tag err'; tag.title = result.error || ''; tag.textContent = 'Duplicate'; }
+      else if (result.status === 'indexing_failed') { tag.className = 'tag err'; tag.title = result.error || ''; tag.textContent = 'Saved, not indexed'; }
+      else { tag.className = 'tag err'; tag.title = result.error || ''; tag.textContent = 'Failed'; }
     } catch { tag.className = 'tag err'; tag.textContent = 'Error'; }
   }
   e.target.value = '';
@@ -841,7 +871,14 @@ async function downloadPendingUpload(id) {
 async function approveUpload(id) {
   try {
     const r = await fetch(`${API}/api/admin/approvals/${id}/approve`, { method: 'POST', headers: { 'Authorization': `Bearer ${S.token}` } });
-    if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.detail || 'Approval failed.'); }
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(body.detail || 'Approval failed.'); loadPendingApprovals(); return; }
+    const result = await waitForIndexingDone(body.filename);
+    if (result && result.status === 'indexing_failed') {
+      alert('Approved, but indexing failed: ' + (result.error || 'unknown error') + '. The document is saved but not yet searchable — try approving again once the issue is fixed.');
+    } else if (!result) {
+      alert('Approval is taking longer than expected. It may still complete in the background — check back shortly.');
+    }
   } catch { alert('Cannot reach the server.'); }
   loadPendingApprovals();
 }

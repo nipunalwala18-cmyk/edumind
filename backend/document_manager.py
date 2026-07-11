@@ -50,7 +50,9 @@ _indexing_state: dict = {"active": False, "filename": None, "started_at": None}
 
 def get_indexing_state() -> dict:
     with _indexing_lock:
-        return dict(_indexing_state)
+        state = dict(_indexing_state)
+    state["last_result"] = get_last_result()
+    return state
 
 
 def _set_indexing(active: bool, filename: Optional[str] = None) -> None:
@@ -58,6 +60,51 @@ def _set_indexing(active: bool, filename: Optional[str] = None) -> None:
         _indexing_state["active"] = active
         _indexing_state["filename"] = filename if active else None
         _indexing_state["started_at"] = datetime.utcnow().isoformat() if active else None
+
+
+# ---------------------------------------------------------------------------
+# Last-result tracking (for background/async ingestion callers to poll)
+# ---------------------------------------------------------------------------
+
+_last_result_lock = threading.Lock()
+_last_result: Optional[dict] = None
+
+
+def get_last_result() -> Optional[dict]:
+    with _last_result_lock:
+        return dict(_last_result) if _last_result else None
+
+
+def _store_last_result(result: "IngestionResult") -> None:
+    global _last_result
+    with _last_result_lock:
+        _last_result = {
+            "filename":       result.filename,
+            "status":         result.status,
+            "doc_id":         result.doc_id,
+            "chunks_created": result.chunks_created,
+            "vectors_added":  result.vectors_added,
+            "error":          result.error,
+            "completed_at":   datetime.utcnow().isoformat(),
+        }
+
+
+def run_ingestion_background(
+    filename: str,
+    content_bytes: bytes,
+    forced_access_level: Optional[str] = None,
+    uploaded_by: Optional[str] = None,
+) -> None:
+    """
+    Runs ingest_uploaded_file() and records the outcome for polling clients.
+
+    Intended for use as a FastAPI BackgroundTasks target — the HTTP request
+    returns immediately (avoiding Render free-tier request/health-check
+    timeouts on slow embedding calls) while /api/indexing-status reports
+    progress and, once done, the recorded last_result (ingest_uploaded_file
+    records it automatically, so this just needs to invoke it).
+    """
+    ingest_uploaded_file(filename, content_bytes, forced_access_level, uploaded_by)
 
 STAGING_DIR = Path(_PROJECT_ROOT) / "data" / "staging"
 # Admin-uploadable formats. Text extraction for each is handled by the shared
@@ -120,9 +167,14 @@ def ingest_uploaded_file(
     t_start = time.perf_counter()
     _set_indexing(True, filename)
     try:
-        return _ingest_uploaded_file_inner(
+        result = _ingest_uploaded_file_inner(
             filename, content_bytes, forced_access_level, uploaded_by, t_start
         )
+        _store_last_result(result)
+        return result
+    except Exception as exc:
+        _store_last_result(IngestionResult(filename=filename, status="failed", error=str(exc)))
+        raise
     finally:
         _set_indexing(False)
 

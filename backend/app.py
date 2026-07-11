@@ -37,7 +37,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from pydantic import BaseModel
@@ -579,17 +579,22 @@ def delete_conversation(
 
 
 # ── Document upload (Admin) ────────────────────────────────────────────────────
-# Plain `def` (not `async def`): ingestion is a long, CPU-bound, blocking call
-# (docx/pdf parsing, chunking, embedding, ChromaDB writes). FastAPI runs sync
-# `def` endpoints in a threadpool, so this doesn't freeze the event loop for
-# other requests (e.g. other users' chat queries or /api/indexing-status polls)
-# while a document is being indexed. An `async def` here would block everyone.
+# Ingestion (extraction, chunking, embedding, vector upsert) can take well over
+# a minute depending on the embedding provider's latency. Running it inline
+# held the HTTP connection open for the whole duration, which on constrained
+# hosting (e.g. Render's free tier) can exceed the platform's request/health
+# check timeout and take the whole service down mid-request. So this endpoint
+# only validates the upload synchronously and hands the actual pipeline off to
+# a background task — the client polls GET /api/indexing-status for progress
+# and the final result (see document_manager.get_indexing_state()).
 @app.post("/api/upload")
 def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
-    """Admin-only: upload a .docx document → triggers full ingestion pipeline."""
+    """Admin-only: upload a .docx document → triggers full ingestion pipeline
+    in the background. Returns immediately; poll GET /api/indexing-status."""
     if current_user.role != "Admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -600,31 +605,12 @@ def upload_document(
     if not content:
         raise HTTPException(status_code=400, detail="File is empty.")
 
-    from backend.document_manager import ingest_uploaded_file
-    result = ingest_uploaded_file(
-        filename=file.filename, content_bytes=content, uploaded_by=current_user.username
+    from backend.document_manager import run_ingestion_background
+    background_tasks.add_task(
+        run_ingestion_background, file.filename, content, None, current_user.username
     )
 
-    if result.status == "duplicate":
-        raise HTTPException(
-            status_code=409,
-            detail=f"Duplicate: {result.error or 'identical document already indexed'}",
-        )
-    if result.status == "failed":
-        raise HTTPException(status_code=400, detail=result.error or "Ingestion failed.")
-
-    return {
-        "status":          result.status,
-        "filename":        result.filename,
-        "doc_id":          result.doc_id,
-        "department":      result.department,
-        "version":         result.version,
-        "chunks_created":  result.chunks_created,
-        "vectors_added":   result.vectors_added,
-        "processing_ms":   result.processing_ms,
-        "superseded":      result.status == "superseded",
-        "error":           result.error,
-    }
+    return {"status": "processing", "filename": file.filename}
 
 
 # ── Committee Head SOP submissions ──────────────────────────────────────────────
@@ -998,17 +984,24 @@ def admin_download_pending_upload(upload_id: int, _: User = Depends(_require_adm
 
 
 @app.post("/api/admin/approvals/{upload_id}/approve")
-def admin_approve_upload(upload_id: int, current_user: User = Depends(_require_admin)):
-    """Approve a committee-head SOP submission — triggers ingestion + embedding."""
-    from backend.committee_manager import approve_upload
-    try:
-        result = approve_upload(upload_id, current_user.username)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+def admin_approve_upload(
+    upload_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(_require_admin),
+):
+    """Approve a committee-head SOP submission — validates synchronously, then
+    runs ingestion + embedding in the background (see /api/upload's docstring
+    for why). Returns immediately; poll GET /api/indexing-status."""
+    from backend.committee_manager import approve_upload, get_upload
 
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result["error"])
-    return result["upload"]
+    row = get_upload(upload_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+    if row["approval_status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Submission already {row['approval_status']}.")
+
+    background_tasks.add_task(approve_upload, upload_id, current_user.username)
+    return {"status": "processing", "upload_id": upload_id, "filename": row["original_filename"]}
 
 
 @app.post("/api/admin/approvals/{upload_id}/reject")
