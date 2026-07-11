@@ -92,7 +92,11 @@ _PHASE2_DOCUMENT_COLUMNS = {
 def _migrate_documents_table(cursor) -> None:
     """Extends the Phase 1 documents table with Phase 2/3 columns."""
     for column, definition in _PHASE2_DOCUMENT_COLUMNS.items():
-        _ensure_column(cursor, "documents", column, definition)
+        if column == "doc_id":
+            # PostgreSQL requires UNIQUE constraint on referenced columns
+            _ensure_column(cursor, "documents", column, "TEXT UNIQUE")
+        else:
+            _ensure_column(cursor, "documents", column, definition)
 
     cursor.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_documents_doc_id ON documents(doc_id)"
@@ -113,6 +117,7 @@ def initialize_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS documents (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        doc_id TEXT UNIQUE,
         filepath TEXT UNIQUE,
         sha256_hash TEXT,
         status TEXT,
@@ -138,6 +143,9 @@ def initialize_db():
     )
     """)
 
+    # Migrate documents table BEFORE creating chunks, so doc_id column exists
+    _migrate_documents_table(cursor)
+
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS chunks (
         chunk_id TEXT PRIMARY KEY,
@@ -156,7 +164,6 @@ def initialize_db():
     )
     """)
 
-    _migrate_documents_table(cursor)
     _migrate_chunks_embedding_columns(cursor)
 
     cursor.execute(
