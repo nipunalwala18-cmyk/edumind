@@ -29,6 +29,13 @@ class PostgreSQLAdapterCursor:
             sql = sql.replace("?", "%s")
         return self._cursor.execute(sql, parameters or ())
 
+    def executemany(self, sql, seq_of_parameters):
+        if "AUTOINCREMENT" in sql:
+            sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+            sql = sql.replace("AUTOINCREMENT", "")
+        sql = sql.replace("?", "%s")
+        return self._cursor.executemany(sql, seq_of_parameters)
+
     def fetchone(self):
         row = self._cursor.fetchone()
         if row is None:
