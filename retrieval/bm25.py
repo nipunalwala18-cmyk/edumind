@@ -121,9 +121,9 @@ class BM25Index:
                 os.path.dirname(os.path.abspath(__file__)), "..", "ingestion_ledger.db"
             )
 
-        logger.info("[BM25] Building index from SQLite...")
-        conn = sqlite3.connect(os.path.abspath(db_path))
-        conn.row_factory = sqlite3.Row
+        logger.info("[BM25] Building index from active database...")
+        import ledger
+        conn = ledger.get_connection()
         cur  = conn.cursor()
         cur.execute(
             """
