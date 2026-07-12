@@ -319,10 +319,10 @@ function navFor() {
 }
 
 const SUGGEST = {
-  Public:  ['What programmes are offered?', 'How do I apply for admission?', 'Where is the campus located?'],
+  Public:  ['What programmes are offered?', 'How do I apply for admission?', 'How are student enquiries and grievances handled?'],
   Student: ['What are the exam guidelines?', 'How do I apply for a scholarship?', 'When does the semester start?'],
-  Faculty: ['Summarise the examination SOP', 'Research grant deadlines?', 'Faculty leave policy?'],
-  Admin:   ['Admin circulars for Q1', 'Document ingestion status', 'Summarise research grant SOP'],
+  Faculty: ['Summarise the examination SOP', 'How are research proposals reviewed and approved?', 'Faculty leave policy?'],
+  Admin:   ['Admin circulars for Q1', 'How is the annual budget prepared?', 'Summarise research grant SOP'],
 };
 
 /* ═══════════════════════════════════════════════════════════════════ APP SHELL */
