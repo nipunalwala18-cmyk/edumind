@@ -429,7 +429,7 @@ body::before {
 
 /* users table */
 .utable { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-.utable .hr, .utable .rw { display: grid; grid-template-columns: 1.4fr 0.8fr 1.2fr 1fr 1.6fr; gap: 1rem; padding: 0.95rem 1.2rem; align-items: center; }
+.utable .hr, .utable .rw { display: grid; grid-template-columns: 1.4fr 0.8fr 1.2fr 1fr 1.6fr 0.8fr; gap: 1rem; padding: 0.95rem 1.2rem; align-items: center; }
 .utable .hr { background: var(--surface-2); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-3); }
 .utable .rw { border-top: 1px solid var(--border); font-size: 0.88rem; }
 .utable .rw:hover { background: var(--surface); }

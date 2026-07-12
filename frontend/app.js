@@ -923,6 +923,8 @@ go = function (view) {
   if (view === 'users') loadUsers();
 };
 
+const USER_ROLE_ORDER = ['Admin', 'Faculty', 'Student', 'Public'];
+
 async function loadUsers() {
   const scroll = $('scroll');
   let rows = [
@@ -933,13 +935,54 @@ async function loadUsers() {
     const r = await fetch(`${API}/api/users`, { headers: { 'Authorization': `Bearer ${S.token}` } });
     if (r.ok) rows = await r.json();
   } catch {}
+
+  const adminCount = rows.filter(u => u.role === 'Admin').length;
+  const known = new Set(USER_ROLE_ORDER);
+  const groups = USER_ROLE_ORDER
+    .map(role => ({ role, users: rows.filter(u => u.role === role) }))
+    .filter(g => g.users.length);
+  const other = rows.filter(u => !known.has(u.role));
+  if (other.length) groups.push({ role: 'Other', users: other });
+
+  const userRow = (u) => {
+    const isSelf = u.username === S.user;
+    const isLastAdmin = u.role === 'Admin' && adminCount <= 1;
+    const disabled = isSelf || isLastAdmin || !u.id;
+    const reason = isSelf ? 'You cannot delete your own account'
+      : isLastAdmin ? 'Cannot delete the last remaining Admin'
+      : 'Delete user';
+    const btnStyle = `padding:.3rem .6rem;font-size:.78rem${disabled ? ';opacity:.4;cursor:not-allowed' : ''}`;
+    return `<div class="rw">
+      <div class="who"><span class="av">${initials(u.username)}</span>${esc(u.username)}</div>
+      <div><span class="role-pill">${esc(u.role)}</span></div>
+      <div>${esc(u.department || '—')}</div>
+      <div>${statusTag(u.approval_status || 'approved', u.rejection_reason)}</div>
+      <div>${committeeHeadCell(u)}</div>
+      <div><button class="btn btn-ghost" style="${btnStyle}" ${disabled ? 'disabled' : ''} title="${esc(reason)}" onclick="deleteUser(${u.id}, '${esc(u.username)}')">Delete</button></div>
+    </div>`;
+  };
+
   scroll.innerHTML = `<div class="view">
     <div class="sec-head"><h3>User directory</h3><span class="chip">${rows.length} accounts</span></div>
-    <div class="utable">
-      <div class="hr"><div>User</div><div>Role</div><div>Department</div><div>Status</div><div>Committee Head</div></div>
-      ${rows.map(u => `<div class="rw"><div class="who"><span class="av">${initials(u.username)}</span>${esc(u.username)}</div><div><span class="role-pill">${u.role}</span></div><div>${esc(u.department || '—')}</div><div>${statusTag(u.approval_status || 'approved', u.rejection_reason)}</div><div>${committeeHeadCell(u)}</div></div>`).join('')}
-    </div>
+    ${groups.map(g => `
+      <div class="sec-head" style="margin-top:1.4rem;margin-bottom:.6rem">
+        <h3 style="font-size:.9rem;color:var(--text-2)">${esc(g.role)} <span style="color:var(--text-3);font-weight:400">(${g.users.length})</span></h3>
+      </div>
+      <div class="utable">
+        <div class="hr"><div>User</div><div>Role</div><div>Department</div><div>Status</div><div>Committee Head</div><div>Actions</div></div>
+        ${g.users.map(userRow).join('')}
+      </div>`).join('')}
   </div>`;
+}
+
+async function deleteUser(userId, username) {
+  if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
+  try {
+    const r = await fetch(`${API}/api/users/${userId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${S.token}` } });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) { alert(body.detail || 'Could not delete user.'); return; }
+  } catch { alert('Cannot reach the server.'); return; }
+  loadUsers();
 }
 
 function committeeHeadCell(u) {

@@ -1115,3 +1115,26 @@ def admin_set_committee_head(
         "is_committee_head": target.is_committee_head,
         "committee_name": target.committee_name,
     }
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(
+    user_id: int,
+    current_user: User = Depends(_require_admin),
+    db: Session = Depends(get_db),
+):
+    """Deletes a user account. Admins cannot delete themselves or the last
+    remaining Admin account, to avoid ever locking every admin out."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account.")
+    if target.role == "Admin":
+        admin_count = db.query(User).filter(User.role == "Admin").count()
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last remaining Admin account.")
+
+    db.delete(target)
+    db.commit()
+    return {"status": "deleted", "id": user_id, "username": target.username}
