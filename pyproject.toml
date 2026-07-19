@@ -2,5 +2,5 @@
 name = "edumind"
 version = "0.1.0"
 
-[tool.vercel]
-entrypoint = "backend.app:app"
+[project.scripts]
+app = "backend.app:app"
