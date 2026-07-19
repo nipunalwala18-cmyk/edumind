@@ -1,5 +1,4 @@
 # ── EduMind AI — Application Dockerfile ────────────────────────────────────────
-# Base: python:3.11-slim
 FROM python:3.11-slim AS deps
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,28 +8,26 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System packages required by python-docx, sentence-transformers, chromadb
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies first
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# ── App layer ────────────────────────────────────────────────────────────────
+# ── Application ───────────────────────────────────────────────────────────────
 FROM deps AS app
 
 WORKDIR /app
 
-# Copy application source
 COPY . .
 
-# Create persistent directories
 RUN mkdir -p data/staging vector_store/chroma_db
 
-# Expose FastAPI port
-EXPOSE 8000
+# Cloud Run listens on port 8080
+EXPOSE 8080
 
-CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["sh", "-c", "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1"]
