@@ -1,7 +1,16 @@
 {
   "version": 2,
   "cleanUrls": true,
+  "functions": {
+    "backend/app.py": {
+      "maxDuration": 60
+    }
+  },
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/backend/app.py"
+    },
     {
       "source": "/(.*)",
       "destination": "/frontend/$1"
