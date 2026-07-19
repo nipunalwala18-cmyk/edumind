@@ -3,6 +3,7 @@
   "cleanUrls": true,
   "functions": {
     "backend/app.py": {
+      "runtime": "@vercel/python",
       "maxDuration": 60
     }
   },
